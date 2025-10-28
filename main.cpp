@@ -51,7 +51,7 @@ void save_results(const Grid& g, const VDOUB& u, const string& filename, const s
     file.close();
 }
 
-void save_statistics(const Grid& g, double time, double max_inaccuracy,
+void save_stats(const Grid& g, double time, double max_inaccuracy,
                      double first_step_inaccuracy, double last_step_inaccuracy, int threads_num) {
     string filename = "results/statistics/" + to_string(g.N) + "_" +
                            to_string(threads_num) + "_" + g.domain_label + "_statistics.txt";
@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
     VDOUB result_vec;
     double time = 0, max_inaccuracy = -1, first_step_inaccuracy = 0, last_step_inaccuracy = 0;
 
-    solve_equation(grid, time, max_inaccuracy, first_step_inaccuracy, last_step_inaccuracy, result_vec, threads_num);
+    solve(grid, time, max_inaccuracy, first_step_inaccuracy, last_step_inaccuracy, result_vec, threads_num);
 
     cout << "Result:\n"
               << "\tTime = " << time << "\n"
@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
               << "\tFirst step inaccuracy = " << first_step_inaccuracy << "\n"
               << "\tLast step inaccuracy = " << last_step_inaccuracy << endl;
 
-    save_statistics(grid, time, max_inaccuracy, first_step_inaccuracy, last_step_inaccuracy, threads_num);
+    save_stats(grid, time, max_inaccuracy, first_step_inaccuracy, last_step_inaccuracy, threads_num);
     save_results(grid, result_vec, "results/grid/" + to_string(N) + "_" +
                      to_string(threads_num) + "_" + grid.domain_label + "_nums.csv", "nums");
     save_results(grid, result_vec, "results/grid/" + to_string(N) + "_" +

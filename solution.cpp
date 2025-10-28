@@ -1,9 +1,9 @@
 #define _USE_MATH_DEFINES
 #include "equation.hpp"
-#include <iostream>
-#include <chrono>
 #include <cmath>
+#include <chrono>
 #include <omp.h>
+#include <iostream>
 
 using namespace std;
 
@@ -181,7 +181,7 @@ void run_algo(Grid& g, VDOUB2D& u, double& max_inacc, double& last_step_inaccura
     }
 }
 
-void solve_equation(Grid& g, double& time, double& max_inacc, double& inacc_first, double& last_step_inaccuracy, VDOUB& result, int& threads_num) {
+void solve(Grid& g, double& time, double& max_inacc, double& inacc_first, double& last_step_inaccuracy, VDOUB& result, int& threads_num) {
 	omp_set_dynamic(0);
 	omp_set_num_threads(threads_num);
 

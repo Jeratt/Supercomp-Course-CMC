@@ -1,13 +1,14 @@
 #ifndef EQUATION_HPP
 #define EQUATION_HPP
 
-#include <iostream>
-#include <vector>
 #include <cmath>
+#include <vector>
+#include <iostream>
 
-#define T 20
 typedef std::vector< std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
+
+#define T 20
 
 class Grid {
 public:
@@ -34,6 +35,6 @@ inline double u_analytical(const Grid& g, const double& x, const double& y, cons
     return sin(M_PI * x / g.Lx) * sin(2.0 * M_PI * y / g.Ly) * sin(3.0 * M_PI * z / g.Lz) * cos(at * t);
 }
 
-void solve_equation(Grid& grid, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result, int& threads_num);
+void solve(Grid& grid, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result, int& threads_num);
 
 #endif
