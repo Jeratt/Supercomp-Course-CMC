@@ -21,51 +21,6 @@ double parse_length(const char* arg, string& label_part) {
     }
 }
 
-void save_results(const Grid& g, const VDOUB& u, const string& filename, const string& data_type) {
-    ofstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Error with open file for " <<  data_type << " save"  << endl;
-        return;
-    }
-    for (int i = 0; i < g.N + 1; ++i) {
-        for (int j = 0; j < g.N + 1; ++j) {
-            for (int k = 0; k < g.N + 1; ++k) {
-                if (data_type == "nums")
-                {
-                    file << u[g.index(i, j, k)];
-                } else if (data_type == "anal")
-                {
-                    file << u_analytical(g, i * g.h_x, j * g.h_y, k * g.h_z, (T - 1) * g.tau);
-                } else if (data_type == "inacc")
-                {
-                    file << fabs(u[g.index(i, j, k)] - u_analytical(g, i * g.h_x, j * g.h_y, k * g.h_z, (T - 1) * g.tau));
-                } else {
-                    cerr << "Unknown matrix type: " << data_type << endl;
-                }
-                if (k < g.N) file << ",";
-            }
-            file << "\n";
-        }
-        file << "\n";
-    }
-    file.close();
-}
-
-void save_stats(const Grid& g, double time, double max_inaccuracy,
-                     double first_step_inaccuracy, double last_step_inaccuracy, int threads_num) {
-    string filename = "results/statistics/" + to_string(g.N) + "_" +
-                           to_string(threads_num) + "_" + g.domain_label + "_statistics.txt";
-    ofstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Failed to open file '" << filename << "' for writing." << endl;
-        return;
-    }
-    file << "Time = " << time << "\n"
-         << "Max inaccuracy = " << max_inaccuracy << "\n"
-         << "First step inaccuracy = " << first_step_inaccuracy << "\n"
-         << "Last step inaccuracy = " << last_step_inaccuracy << endl;
-}
-
 int main(int argc, char* argv[]) {
     if (argc != 6) {
         cerr << "Usage: " << argv[0] << " N THREADS Lx Ly Lz\n"
@@ -106,14 +61,6 @@ int main(int argc, char* argv[]) {
               << "\tMax inaccuracy = " << max_inaccuracy << "\n"
               << "\tFirst step inaccuracy = " << first_step_inaccuracy << "\n"
               << "\tLast step inaccuracy = " << last_step_inaccuracy << endl;
-
-    save_stats(grid, time, max_inaccuracy, first_step_inaccuracy, last_step_inaccuracy, threads_num);
-    save_results(grid, result_vec, "results/grid/" + to_string(N) + "_" +
-                     to_string(threads_num) + "_" + grid.domain_label + "_nums.csv", "nums");
-    save_results(grid, result_vec, "results/grid/" + to_string(N) + "_" +
-                     to_string(threads_num) + "_" + grid.domain_label + "_anal.csv", "anal");
-    save_results(grid, result_vec, "results/grid/" + to_string(N) + "_" +
-                     to_string(threads_num) + "_" + grid.domain_label + "_inacc.csv", "inacc");
 
     return 0;
 }
