@@ -27,7 +27,7 @@ public:
         tau = 0.0001;
     }
 
-    inline int global_index(const int& i, const int& j, const int& k) const {
+    inline int global_index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
@@ -48,8 +48,12 @@ public:
            front_recv,  back_recv;
 
     Block(const Grid& g, const VINT& neighbors, const int coords[3], int dimx,
-        int dimy, int dimz, int rank): rank(rank), coord_x(coords[0]),
-        coord_y(coords[1]), coord_z(coords[2]), neighbors(neighbors),
+          int dimy, int dimz, int rank) : 
+        rank(rank), 
+        coord_x(coords[0]),
+        coord_y(coords[1]), 
+        coord_z(coords[2]), 
+        neighbors(neighbors)
     {
         int base_x = (g.N + 1) / dimx;
         int rem_x  = (g.N + 1) % dimx;
