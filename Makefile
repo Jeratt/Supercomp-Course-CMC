@@ -5,5 +5,4 @@ LIBS = -L/opt/ibm/spectrum_mpi/lib -lmpiprofilesupport -lmpi_ibm
 TARGET = wave3d_mpi
 SOURCES = main_mpi.cpp solution_mpi.cpp
 
-compile_polus: create_result_dir
-	$(G++) $(CFLAGS) $(SOURCES) -o $(TARGET) $(LIBS)
+compile_polus: $(G++) $(CFLAGS) $(SOURCES) -o $(TARGET) $(LIBS)
