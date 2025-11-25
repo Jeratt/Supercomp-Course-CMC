@@ -8,14 +8,14 @@
 
 using namespace std;
 
-inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& u, int i, int j, int k) {
+inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
     double d2x = (u[b.local_index(i - 1, j, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i + 1, j, k)]) / (g.h_x * g.h_x);
     double d2y = (u[b.local_index(i, j - 1, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j + 1, k)]) / (g.h_y * g.h_y);
     double d2z = (u[b.local_index(i, j, k - 1)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j, k + 1)]) / (g.h_z * g.h_z);
     return d2x + d2y + d2z;
 }
 
-void exchange_halos(const Block& b, VDOUB& u) {
+void exchange_halos(Block& b, VDOUB& u) {
     const int tag_left   = 1, tag_right  = 2,
               tag_bottom = 3, tag_top    = 4,
               tag_front  = 5, tag_back   = 6;
@@ -107,7 +107,7 @@ void exchange_halos(const Block& b, VDOUB& u) {
     }
 }
 
-void apply_boundary_conditions(const Grid& g, const Block& b, VDOUB& u) {
+void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u) {
     // x
     if (b.x_start == 0) {
         for (int j = 1; j <= b.Ny; ++j)
@@ -135,7 +135,7 @@ void apply_boundary_conditions(const Grid& g, const Block& b, VDOUB& u) {
     // y -> no need
 }
 
-void init(const Grid& g, const Block& b, VVEC& u) {
+void init(const Grid& g, Block& b, VVEC& u) {
     // padding
     fill(u[0].begin(), u[0].end(), 0.0);
     fill(u[1].begin(), u[1].end(), 0.0);
@@ -164,7 +164,7 @@ void init(const Grid& g, const Block& b, VVEC& u) {
     apply_boundary_conditions(g, b, u[1]);
 }
 
-void run_algo(const Grid& g, const Block& b, VVEC& u,
+void run_algo(const Grid& g, Block& b, VVEC& u,
               double& max_inaccuracy, double& last_step_inaccuracy) {
     for (int step = 2; step < TIME_STEPS; ++step) {
         int prev = (step - 2) % 3;

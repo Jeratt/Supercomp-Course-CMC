@@ -6,6 +6,8 @@
 #include <iostream>
 #include <mpi.h>
 
+#define TIME_STEPS 20
+
 typedef std::vector<std::vector<double>> VVEC;
 typedef std::vector<double> VDOUB;
 typedef std::vector<int> VINT;
@@ -45,9 +47,9 @@ public:
            bottom_recv, top_recv,
            front_recv,  back_recv;
 
-    Block(const Grid& g, const VINT& neighbors, const int coords[3],
-          int dimx, int dimy, int dimz, int rank)
-        : neighbors(neighbors), rank(rank), coord_x(coords[0]), coord_y(coords[1]), coord_z(coords[2])
+    Block(const Grid& g, const VINT& neighbors, const int coords[3], int dimx,
+        int dimy, int dimz, int rank): rank(rank), coord_x(coords[0]),
+        coord_y(coords[1]), coord_z(coords[2]), neighbors(neighbors),
     {
         int base_x = (g.N + 1) / dimx;
         int rem_x  = (g.N + 1) % dimx;
