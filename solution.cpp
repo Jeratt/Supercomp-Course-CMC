@@ -1,201 +1,239 @@
 #define _USE_MATH_DEFINES
 #include "equation.hpp"
+#include <mpi.h>
 #include <cmath>
-#include <chrono>
-#include <omp.h>
 #include <iostream>
+#include <algorithm>
+#include <vector>
 
 using namespace std;
 
-inline double laplace_operator(const Grid& g, const VDOUB& ui, const int& i, const int& j, const int& k) {
-    // x- first order
-    double d2x = (ui[g.index(i - 1, j, k)] - 2.0 * ui[g.index(i, j, k)] + ui[g.index(i + 1, j, k)]) / (g.h_x * g.h_x);
-
-    // y - periodic
-    int j_prev = (j - 1 + g.N + 1) % (g.N + 1);
-    int j_next = (j + 1) % (g.N + 1);
-    double d2y = (ui[g.index(i, j_prev, k)] - 2.0 * ui[g.index(i, j, k)] + ui[g.index(i, j_next, k)]) / (g.h_y * g.h_y);
-
-    // z - first order
-    double d2z = (ui[g.index(i, j, k - 1)] - 2.0 * ui[g.index(i, j, k)] + ui[g.index(i, j, k + 1)]) / (g.h_z * g.h_z);
-
+inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& u, int i, int j, int k) {
+    double d2x = (u[b.local_index(i - 1, j, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i + 1, j, k)]) / (g.h_x * g.h_x);
+    double d2y = (u[b.local_index(i, j - 1, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j + 1, k)]) / (g.h_y * g.h_y);
+    double d2z = (u[b.local_index(i, j, k - 1)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j, k + 1)]) / (g.h_z * g.h_z);
     return d2x + d2y + d2z;
 }
 
-void init(const Grid& g, VDOUB2D& u, double& max_inacc, double& inacc_first) {
-    // x - first order
-    #pragma omp parallel for collapse(2)
-    for (int j = 0; j < g.N + 1; ++j)
-    {
-        for (int k = 0; k < g.N + 1; ++k) {
-            u[0][g.index(0, j, k)] = 0.0;
-            u[0][g.index(g.N, j, k)] = 0.0;
-            u[1][g.index(0, j, k)] = 0.0;
-            u[1][g.index(g.N, j, k)] = 0.0;
-        }
+void exchange_halos(const Block& b, VDOUB& u) {
+    const int tag_left   = 1, tag_right  = 2,
+              tag_bottom = 3, tag_top    = 4,
+              tag_front  = 5, tag_back   = 6;
+
+    MPI_Request req[12];
+    int nreq = 0;
+
+    // X axis -> first order
+    if (b.neighbors[0] != -1) { // left neighbor exists
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.left_send[idx] = u[b.local_index(1, j, k)];
+        MPI_Irecv(b.left_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], tag_right,  MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.left_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], tag_left,   MPI_COMM_WORLD, &req[nreq++]);
+    }
+    if (b.neighbors[1] != -1) { // right neighbor exists
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.right_send[idx] = u[b.local_index(b.Nx, j, k)];
+        MPI_Irecv(b.right_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_left,   MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.right_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_right,  MPI_COMM_WORLD, &req[nreq++]);
     }
 
-    // z - first order
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < g.N + 1; ++i)
-    {
-        for (int j = 0; j < g.N + 1; ++j) {
-            u[0][g.index(i, j, 0)] = 0.0;
-            u[0][g.index(i, j, g.N)] = 0.0;
-            u[1][g.index(i, j, 0)] = 0.0;
-            u[1][g.index(i, j, g.N)] = 0.0;
-        }
+    // Y axis -> periodic
+    if (b.neighbors[2] != -1) { // bottom (y-)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.bottom_send[idx] = u[b.local_index(i, 1, k)];
+        MPI_Irecv(b.bottom_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.bottom_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_bottom, MPI_COMM_WORLD, &req[nreq++]);
+    }
+    if (b.neighbors[3] != -1) { // top (y+)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.top_send[idx] = u[b.local_index(i, b.Ny, k)];
+        MPI_Irecv(b.top_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_bottom, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
     }
 
-    // y - periodic
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < g.N + 1; ++i)
-    {
-        for (int k = 0; k < g.N + 1; ++k) {
-            double y0_val = u_analytical(g, i * g.h_x, 0.0, k * g.h_z, 0.0);
-            double yN_val = u_analytical(g, i * g.h_x, g.Ly, k * g.h_z, 0.0);
-            u[0][g.index(i, 0, k)] = y0_val;
-            u[0][g.index(i, g.N, k)] = yN_val;
-
-            y0_val = u_analytical(g, i * g.h_x, 0.0, k * g.h_z, g.tau);
-            yN_val = u_analytical(g, i * g.h_x, g.Ly, k * g.h_z, g.tau);
-            u[1][g.index(i, 0, k)] = y0_val;
-            u[1][g.index(i, g.N, k)] = yN_val;
-        }
+    // Z axis -> first order
+    if (b.neighbors[4] != -1) { // front (z-)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                b.front_send[idx] = u[b.local_index(i, j, 1)];
+        MPI_Irecv(b.front_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.front_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_front, MPI_COMM_WORLD, &req[nreq++]);
+    }
+    if (b.neighbors[5] != -1) { // back (z+)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                b.back_send[idx] = u[b.local_index(i, j, b.Nz)];
+        MPI_Irecv(b.back_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_front, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.back_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
     }
 
-    // u_0 
-    #pragma omp parallel for collapse(3)
-    for (int i = 1; i < g.N; ++i)
-        for (int j = 1; j < g.N; ++j)
-            for (int k = 1; k < g.N; ++k)
-                u[0][g.index(i, j, k)] = u_analytical(g, i * g.h_x, j * g.h_y, k * g.h_z, 0.0);
+    MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
 
-    // u_1 
-    #pragma omp parallel for collapse(3)
-    for (int i = 1; i < g.N; ++i)
-        for (int j = 1; j < g.N; ++j)
-            for (int k = 1; k < g.N; ++k)
-                u[1][g.index(i, j, k)] = u[0][g.index(i, j, k)] + 0.5 * g.a2 * pow(g.tau, 2) * laplace_operator(g, u[0], i, j, k);
-
-    // innacuracy 
-    double step_max_error = -1;
-    #pragma omp parallel for collapse(3) reduction(max : step_max_error)
-    for (int i = 0; i < g.N + 1; ++i)
-    {
-        for (int j = 0; j < g.N + 1; ++j)
-        {
-            for (int k = 0; k < g.N + 1; ++k)
-            {
-                double tmp = fabs(u[1][g.index(i, j, k)] - u_analytical(g, i * g.h_x, j * g.h_y, k * g.h_z, g.tau));
-                if (tmp > step_max_error)
-                {
-                    step_max_error = tmp;
-                }
-            }
-        }
+    if (b.neighbors[0] != -1) {
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(0, j, k)] = b.left_recv[idx];
+    }
+    if (b.neighbors[1] != -1) {
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(b.Nx + 1, j, k)] = b.right_recv[idx];
     }
 
-    max_inacc = max(max_inacc, step_max_error);
-    inacc_first = step_max_error;
+    if (b.neighbors[2] != -1) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(i, 0, k)] = b.bottom_recv[idx];
+    }
+    if (b.neighbors[3] != -1) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(i, b.Ny + 1, k)] = b.top_recv[idx];
+    }
 
-    cout << "Max start inaccuracy:" << " " << step_max_error << endl;
-}
-
-void run_algo(Grid& g, VDOUB2D& u, double& max_inacc, double& last_step_inaccuracy) {
-    for (int s = 2; s < T; ++s) {
-        int prev = (s - 2) % 3;
-        int curr = (s - 1) % 3;
-        int next = s % 3;
-
-        #pragma omp parallel for collapse(3)
-        for (int i = 1; i < g.N; ++i)
-        {
-            for (int j = 1; j < g.N; ++j)
-            {
-                for (int k = 1; k < g.N; ++k)
-                {
-                    u[next][g.index(i, j, k)] = 2 * u[curr][g.index(i, j, k)] - u[prev][g.index(i, j, k)]
-                     + g.a2 * pow(g.tau, 2) * laplace_operator(g, u[curr], i, j, k);
-                }
-            }
-        }
-
-
-        // x - first order
-        #pragma omp parallel for collapse(2)
-        for (int j = 0; j < g.N + 1; ++j)
-        {
-            for (int k = 0; k < g.N + 1; ++k)
-            {
-                u[next][g.index(0, j, k)] = 0.0;
-                u[next][g.index(g.N, j, k)] = 0.0;
-            }
-        }
-
-        // z - first order
-        #pragma omp parallel for collapse(2)
-        for (int i = 0; i < g.N + 1; ++i)
-        {
-            for (int j = 0; j < g.N + 1; ++j)
-            {
-                u[next][g.index(i, j, 0)] = 0.0;
-                u[next][g.index(i, j, g.N)] = 0.0;
-            }
-        }
-
-        // y - periodic
-        #pragma omp parallel for collapse(2)
-        for (int i = 1; i < g.N; ++i)
-        {
-            for (int k = 1; k < g.N; ++k)
-            {
-                u[next][g.index(i, 0, k)] = 2 * u[curr][g.index(i, 0, k)] - u[prev][g.index(i, 0, k)]
-                                            + g.a2 * pow(g.tau, 2) * laplace_operator(g, u[curr], i, 0, k);
-                u[next][g.index(i, g.N, k)] = 2 * u[curr][g.index(i, g.N, k)] - u[prev][g.index(i, g.N, k)]
-                                              + g.a2 * pow(g.tau, 2) * laplace_operator(g, u[curr], i, g.N, k);
-            }
-        }
-
-        // inaccuracy
-        double step_max_error = -1;
-        #pragma omp parallel for collapse(3) reduction(max : step_max_error)
-        for (int i = 0; i < g.N + 1; ++i)
-        {
-            for (int j = 0; j < g.N + 1; ++j)
-            {
-                for (int k = 0; k < g.N + 1; ++k)
-                {
-                    double tmp = fabs(u[next][g.index(i, j, k)] - u_analytical(g, i * g.h_x, j * g.h_y, k * g.h_z, g.tau * s));
-                    if (tmp > step_max_error) step_max_error = tmp;
-                }
-            }
-        }
-
-        if (step_max_error > max_inacc)
-            max_inacc = step_max_error;
-        if (s == T - 1)
-            last_step_inaccuracy = step_max_error;
-
-        cout << "Max inaccuracy on step " << s << " : " << step_max_error << endl;
+    if (b.neighbors[4] != -1) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                u[b.local_index(i, j, 0)] = b.front_recv[idx];
+    }
+    if (b.neighbors[5] != -1) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                u[b.local_index(i, j, b.Nz + 1)] = b.back_recv[idx];
     }
 }
 
-void solve(Grid& g, double& time, double& max_inacc, double& inacc_first, double& last_step_inaccuracy, VDOUB& result, int& threads_num) {
-	omp_set_dynamic(0);
-	omp_set_num_threads(threads_num);
+void apply_boundary_conditions(const Grid& g, const Block& b, VDOUB& u) {
+    // x
+    if (b.x_start == 0) {
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k)
+                u[b.local_index(0, j, k)] = 0.0;
+    }
+    if (b.x_end == g.N) {
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k)
+                u[b.local_index(b.Nx + 1, j, k)] = 0.0;
+    }
 
-	int n = pow(g.N + 1, 3);
-	VDOUB u0(n), u1(n), u2(n);
-	VDOUB2D u{u0, u1, u2};
+    // z
+    if (b.z_start == 0) {
+        for (int i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j)
+                u[b.local_index(i, j, 0)] = 0.0;
+    }
+    if (b.z_end == g.N) {
+        for (int i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j)
+                u[b.local_index(i, j, b.Nz + 1)] = 0.0;
+    }
 
-	auto start = omp_get_wtime();
+    // y -> no need
+}
 
-	init(g, u, max_inacc, inacc_first);
-	run_algo(g, u, max_inacc, last_step_inaccuracy);
+void init(const Grid& g, const Block& b, VVEC& u) {
+    // padding
+    fill(u[0].begin(), u[0].end(), 0.0);
+    fill(u[1].begin(), u[1].end(), 0.0);
 
-	auto end = omp_get_wtime();
-	time = end - start;
+    for (int i = 1; i <= b.Nx; ++i) {
+        double x = (b.x_start + i - 1) * g.h_x;
+        for (int j = 1; j <= b.Ny; ++j) {
+            double y = (b.y_start + j - 1) * g.h_y;
+            for (int k = 1; k <= b.Nz; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                u[0][b.local_index(i, j, k)] = u_analytical(g, x, y, z, 0.0);
+            }
+        }
+    }
 
-	result = u[(T - 1) % 3];
+    exchange_halos(b, u[0]);
+    apply_boundary_conditions(g, b, u[0]);
+
+    for (int i = 1; i <= b.Nx; ++i)
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k)
+                u[1][b.local_index(i, j, k)] = u[0][b.local_index(i, j, k)]
+                    + 0.5 * g.a2 * g.tau * g.tau * laplace_operator(g, b, u[0], i, j, k);
+
+    exchange_halos(b, u[1]);
+    apply_boundary_conditions(g, b, u[1]);
+}
+
+void run_algo(const Grid& g, const Block& b, VVEC& u,
+              double& max_inaccuracy, double& last_step_inaccuracy) {
+    for (int step = 2; step < TIME_STEPS; ++step) {
+        int prev = (step - 2) % 3;
+        int curr = (step - 1) % 3;
+        int next = step % 3;
+
+        for (int i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j)
+                for (int k = 1; k <= b.Nz; ++k)
+                    u[next][b.local_index(i, j, k)] = 2.0 * u[curr][b.local_index(i, j, k)]
+                        - u[prev][b.local_index(i, j, k)]
+                        + g.a2 * g.tau * g.tau * laplace_operator(g, b, u[curr], i, j, k);
+
+        exchange_halos(b, u[next]);
+        apply_boundary_conditions(g, b, u[next]);
+
+        double local_max_err = 0.0;
+        double t = step * g.tau;
+        for (int i = 1; i <= b.Nx; ++i) {
+            double x = (b.x_start + i - 1) * g.h_x;
+            for (int j = 1; j <= b.Ny; ++j) {
+                double y = (b.y_start + j - 1) * g.h_y;
+                for (int k = 1; k <= b.Nz; ++k) {
+                    double z = (b.z_start + k - 1) * g.h_z;
+                    double exact = u_analytical(g, x, y, z, t);
+                    double err = fabs(u[next][b.local_index(i, j, k)] - exact);
+                    if (err > local_max_err) local_max_err = err;
+                }
+            }
+        }
+
+        double global_max_err;
+        MPI_Allreduce(&local_max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+
+        if (global_max_err > max_inaccuracy)
+            max_inaccuracy = global_max_err;
+        if (step == TIME_STEPS - 1)
+            last_step_inaccuracy = global_max_err;
+
+        if (b.rank == 0)
+            cout << "Step " << step << ": max inaccuracy = " << global_max_err << endl;
+    }
+}
+
+void solve_mpi(const Grid& g, Block& b,
+               int dimx, int dimy, int dimz,
+               MPI_Comm comm_cart,
+               double& time,
+               double& max_inaccuracy,
+               double& first_step_inaccuracy,
+               double& last_step_inaccuracy,
+               VDOUB& result) {
+    int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
+    VDOUB u0(total_size), u1(total_size), u2(total_size);
+    VVEC u = {u0, u1, u2};
+
+    double start = MPI_Wtime();
+
+    init(g, b, u);
+    run_algo(g, b, u, max_inaccuracy, last_step_inaccuracy);
+
+    double end = MPI_Wtime();
+    time = end - start;
+
+    result.resize(b.Nx * b.Ny * b.Nz);
+    for (int i = 1; i <= b.Nx; ++i)
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k) {
+                int idx = (i - 1) * b.Ny * b.Nz + (j - 1) * b.Nz + (k - 1);
+                result[idx] = u[(TIME_STEPS - 1) % 3][b.local_index(i, j, k)];
+            }
 }

@@ -2,10 +2,12 @@
 
 set -e
 
-if [ ! -f ./wave3d ]; then
-    echo "Error: ./wave3d not found. Run make first."
+if [ ! -f ./wave3d_mpi ]; then
+    echo "Error: ./wave3d_mpi not found. Run 'make compile_polus' first."
     exit 1
 fi
+
+declare -a procs=(1 4 8 16 32)
 
 for N in 128 256 512; do
     for type in "1.0_1.0_1.0" "pi_pi_pi"; do
@@ -17,22 +19,22 @@ for N in 128 256 512; do
             L_LABEL="pi"
         fi
 
-        for threads in 1 2 4 8 16 32; do
-            JOB_NAME="omp_job_${N}_${threads}_${L_LABEL}"
-            OUT_FILE="stats_${N}_${threads}_${L_LABEL}.out"
-            ERR_FILE="stats_${N}_${threads}_${L_LABEL}.err"
+        for np in "${procs[@]}"; do
+            JOB_NAME="mpi_job_${N}_${np}_${L_LABEL}"
+            OUT_FILE="stats_mpi_${N}_${np}_${L_LABEL}.out"
+            ERR_FILE="stats_mpi_${N}_${np}_${L_LABEL}.err"
 
-            echo "Submitting: N=$N, threads=$threads, L=$L_LABEL"
-            bsub -n 1 \
+            echo "Submitting: N=$N, np=$np, L=$L_LABEL"
+            bsub -n $np \
                  -q short \
                  -W 00:30 \
-                 -J "$JOB_NAME" \мальном числе сокето
+                 -J "$JOB_NAME" \
                  -o "$OUT_FILE" \
                  -e "$ERR_FILE" \
-                 -R "affinity[core(10,same=socket,exclusive=(socket,alljobs)):membind=localonly:distribute=pack(socket=1)]" \
-                 ./wave3d $N $threads $L_ARGS
+                 -R "span[ptile=32]" \
+                 mpirun -np $np ./wave3d_mpi $N $L_ARGS
         done
     done
 done
 
-echo "All Polus jobs submitted."
+echo "All MPI jobs submitted to Polus."
