@@ -24,7 +24,6 @@ for N in 128 256 512; do
         for np in "${procs[@]}"; do
             OUT_FILE="stats_mpi_${N}_${np}_${L_LABEL}.out"
             ERR_FILE="stats_mpi_${N}_${np}_${L_LABEL}.err"
-            JOB_NAME="mpi_job_${N}_${np}_${L_LABEL}"
 
             echo "Submitting: N=$N, np=$np, L=$L_LABEL"
 
@@ -33,7 +32,6 @@ for N in 128 256 512; do
                 -w 00:30 \
                 --stdout "$OUT_FILE" \
                 --stderr "$ERR_FILE" \
-                --jobname "$JOB_NAME" \
                 ./wave3d_mpi "$N" "${L_ARGS[@]}"
         done
     done
