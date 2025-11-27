@@ -18,6 +18,23 @@ double parse_length(const string& arg, string& label_part) {
     }
 }
 
+void choose_dims(int np, int dims[3]) {
+    dims[0] = dims[1] = dims[2] = 1;
+    for (int i = 1; i * i * i <= np; ++i) {
+        if (np % (i * i * i) == 0) {
+            dims[0] = dims[1] = dims[2] = i;
+        } else if (np % (i * i) == 0) {
+            dims[0] = dims[1] = i;
+            dims[2] = np / (i * i);
+        }
+    }
+    if (dims[0] * dims[1] * dims[2] != np) {
+        dims[0] = 1;
+        dims[1] = 1;
+        dims[2] = np;
+    }
+}
+
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
 
@@ -57,9 +74,14 @@ int main(int argc, char* argv[]) {
     }
 
     int dims[3];
-    MPI_Dims_create(np, 3, dims);
+    choose_dims(np, dims);
 
-    int periods[3] = {0, 1, 0}; 
+    int periods[3] = {0, 1, 0};
+
+    if (rank == 0) {
+        cout << "Chosen 3D topology: (" << dims[0] << ", " << dims[1] << ", " << dims[2] << ")\n"
+             << "Periodicity: x=" << periods[0] << ", y=" << periods[1] << ", z=" << periods[2] << endl;
+    }
 
     MPI_Comm comm_cart;
     MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, true, &comm_cart);
