@@ -1,6 +1,6 @@
 #!/bin/bash
 # Запуск MPI-версии на IBM Polus через mpisubmit.pl
-# Требования: N = 128/256/512, L=1 и L=π, np = 1,4,8,16,32
+# Требования: N = 128/256/512, L=1 и L=π, np = 1,2,4,8,16,32
 
 set -e
 
@@ -9,7 +9,7 @@ if [ ! -f ./wave3d_mpi ]; then
     exit 1
 fi
 
-declare -a procs=(1 4 8 16 32)
+declare -a procs=(1 2 4 8 16 32)
 
 for N in 128 256 512; do
     for type in "1.0_1.0_1.0" "pi_pi_pi"; do
