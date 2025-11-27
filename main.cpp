@@ -56,10 +56,15 @@ int main(int argc, char* argv[]) {
              << "  Domain label = " << grid.domain_label << endl;
     }
 
-    int dims[3];
+    int dims[3] = {0, 0, 0}; 
     MPI_Dims_create(np, 3, dims);
 
     int periods[3] = {0, 1, 0}; 
+
+    if (rank == 0) {
+        cout << "Topology: (" << dims[0] << ", " << dims[1] << ", " << dims[2] << ")\n"
+             << "Periodicity: x=" << periods[0] << ", y=" << periods[1] << ", z=" << periods[2] << endl;
+    }
 
     MPI_Comm comm_cart;
     MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, true, &comm_cart);
@@ -68,9 +73,9 @@ int main(int argc, char* argv[]) {
     MPI_Cart_coords(comm_cart, rank, 3, coords);
 
     vector<int> neighbors(6, -1);
-    MPI_Cart_shift(comm_cart, 0, +1, &neighbors[0], &neighbors[1]); // x- / x+
-    MPI_Cart_shift(comm_cart, 1, +1, &neighbors[2], &neighbors[3]); // y- / y+
-    MPI_Cart_shift(comm_cart, 2, +1, &neighbors[4], &neighbors[5]); // z- / z+
+    MPI_Cart_shift(comm_cart, 0, +1, &neighbors[0], &neighbors[1]);
+    MPI_Cart_shift(comm_cart, 1, +1, &neighbors[2], &neighbors[3]);
+    MPI_Cart_shift(comm_cart, 2, +1, &neighbors[4], &neighbors[5]);
 
     Block block(grid, neighbors, coords, dims[0], dims[1], dims[2], rank);
 
