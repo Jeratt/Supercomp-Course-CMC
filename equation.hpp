@@ -14,21 +14,18 @@ typedef std::vector<int> VINT;
 
 class Grid {
 public:
-    int N;
+    int num_points; 
+    int num_cells;
     double Lx, Ly, Lz, h_x, h_y, h_z, a2, tau;
-    std::string domain_label;
 
-    Grid(int N, double Lx, double Ly, double Lz, const std::string& label)
-        : N(N), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label) {
-        h_x = Lx / N;
-        h_y = Ly / N;
-        h_z = Lz / N;
+    Grid(int num_points, double Lx, double Ly, double Lz, const std::string& label)
+        : num_points(num_points), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label) {
+        num_cells = num_points - 1;
+        h_x = Lx / num_cells;
+        h_y = Ly / num_cells;
+        h_z = Lz / num_cells;
         a2 = 0.25;
         tau = 0.0001;
-    }
-
-    inline int global_index(int i, int j, int k) const {
-        return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
 
@@ -55,12 +52,12 @@ public:
         coord_z(coords[2]), 
         neighbors(neighbors)
     {
-        int base_x = (g.N + 1) / dimx;
-        int rem_x  = (g.N + 1) % dimx;
-        int base_y = (g.N + 1) / dimy;
-        int rem_y  = (g.N + 1) % dimy;
-        int base_z = (g.N + 1) / dimz;
-        int rem_z  = (g.N + 1) % dimz;
+        int base_x = g.num_points / dimx;
+        int rem_x  = g.num_points % dimx;
+        int base_y = g.num_points / dimy;
+        int rem_y  = g.num_points % dimy;
+        int base_z = g.num_points / dimz;
+        int rem_z  = g.num_points % dimz;
 
         Nx = (coord_x < dimx - rem_x) ? base_x : base_x + 1;
         Ny = (coord_y < dimy - rem_y) ? base_y : base_y + 1;
