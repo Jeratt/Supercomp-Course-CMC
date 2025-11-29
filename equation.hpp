@@ -14,16 +14,17 @@ typedef std::vector<int> VINT;
 
 class Grid {
 public:
-    int num_points; 
-    int num_cells;
+    int N;
+    int num_points;
     double Lx, Ly, Lz, h_x, h_y, h_z, a2, tau;
+    std::string domain_label;
 
     Grid(int num_points, double Lx, double Ly, double Lz, const std::string& label)
         : num_points(num_points), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label) {
-        num_cells = num_points - 1;
-        h_x = Lx / num_cells;
-        h_y = Ly / num_cells;
-        h_z = Lz / num_cells;
+        N = num_points - 1;
+        h_x = Lx / N;
+        h_y = Ly / N;
+        h_z = Lz / N;
         a2 = 0.25;
         tau = 0.0001;
     }
