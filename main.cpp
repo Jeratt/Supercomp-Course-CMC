@@ -115,12 +115,19 @@ int main(int argc, char* argv[]) {
     
     // Определение соседей для обмена гало-ячейками
     vector<int> neighbors(6, -1);
-    MPI_Cart_shift(comm_cart, 0, -1, &neighbors[0], MPI_PROC_NULL); // x- сосед
-    MPI_Cart_shift(comm_cart, 0, +1, MPI_PROC_NULL, &neighbors[1]); // x+ сосед
-    MPI_Cart_shift(comm_cart, 1, -1, &neighbors[2], MPI_PROC_NULL); // y- сосед
-    MPI_Cart_shift(comm_cart, 1, +1, MPI_PROC_NULL, &neighbors[3]); // y+ сосед
-    MPI_Cart_shift(comm_cart, 2, -1, &neighbors[4], MPI_PROC_NULL); // z- сосед
-    MPI_Cart_shift(comm_cart, 2, +1, MPI_PROC_NULL, &neighbors[5]); // z+ сосед
+    int dummy;
+    
+    // X direction neighbors
+    MPI_Cart_shift(comm_cart, 0, -1, &neighbors[0], &dummy); // left (x-) neighbor
+    MPI_Cart_shift(comm_cart, 0, 1, &dummy, &neighbors[1]);  // right (x+) neighbor
+    
+    // Y direction neighbors (periodic)
+    MPI_Cart_shift(comm_cart, 1, -1, &neighbors[2], &dummy); // bottom (y-) neighbor
+    MPI_Cart_shift(comm_cart, 1, 1, &dummy, &neighbors[3]);  // top (y+) neighbor
+    
+    // Z direction neighbors
+    MPI_Cart_shift(comm_cart, 2, -1, &neighbors[4], &dummy); // front (z-) neighbor
+    MPI_Cart_shift(comm_cart, 2, 1, &dummy, &neighbors[5]);  // back (z+) neighbor
     
     // Создание блока данных для текущего процесса
     Block block(grid, neighbors, coords, dims[0], dims[1], dims[2], rank);

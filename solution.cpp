@@ -88,7 +88,7 @@ void exchange_halos(Block& b, VDOUB& u) {
     
     MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
     
-    // Обновление гало-ячеек x
+    // Обновление гало-ячейки x
     if (b.neighbors[0] != -1) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -101,7 +101,7 @@ void exchange_halos(Block& b, VDOUB& u) {
                 u[b.local_index(b.Nx + 1, j, k)] = b.right_recv[idx];
     }
     
-    // Обновление гало-ячеек y
+    // Обновление гало-ячейки y
     if (b.neighbors[2] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -114,7 +114,7 @@ void exchange_halos(Block& b, VDOUB& u) {
                 u[b.local_index(i, b.Ny + 1, k)] = b.top_recv[idx];
     }
     
-    // Обновление гало-ячеек z
+    // Обновление гало-ячейки z
     if (b.neighbors[4] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
@@ -159,7 +159,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u) {
     // no additional action needed here for interior points
 }
 
-void enforce_periodicity_y(const Grid& g, Block& b, VDOUB& u, MPI_Comm comm_cart) {
+void enforce_periodicity_y(const Grid& /*g*/, Block& b, VDOUB& u, MPI_Comm comm_cart) {
     // Периодические условия по y: u(x,0,z) = u(x,Ly,z)
     // Обработка специальных случаев для процессов на границах y=0 и y=Ly
     
@@ -422,7 +422,7 @@ void run_algo(const Grid& g, Block& b, VVEC& u, MPI_Comm comm_cart,
 }
 
 void solve_mpi(const Grid& g, Block& b,
-               int dimx, int dimy, int dimz,
+               int /*dimx*/, int /*dimy*/, int /*dimz*/,
                MPI_Comm comm_cart,
                double& time,
                double& max_inaccuracy,
