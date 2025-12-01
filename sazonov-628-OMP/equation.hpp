@@ -1,14 +1,11 @@
 #ifndef EQUATION_HPP
 #define EQUATION_HPP
-
 #include <cmath>
 #include <vector>
 #include <iostream>
-
-typedef std::vector< std::vector<double>> VDOUB2D;
+typedef std::vector<std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
-
-#define T 20
+#define T 20  // 20 временных шагов
 
 class Grid {
 public:
@@ -21,20 +18,26 @@ public:
         h_x = Lx / N;
         h_y = Ly / N;
         h_z = Lz / N;
-        a2 = 0.25;
-        tau = 0.0001;
+        a2 = 0.25;  // задано в варианте 3
+        // Для устойчивости (условие Куранта): τ ≤ h_min / (a * sqrt(3))
+        // Примерная безопасная константа для N от 128 до 512:
+        tau = 0.00005;  // уменьшено вдвое по сравнению с 0.0001
     }
 
-    inline int index(const int& i, const int& j, const int& k) const {
+    inline int index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
 
-inline double u_analytical(const Grid& g, const double& x, const double& y, const double& z, const double& t) {
-    double at = (M_PI / 2.0) * sqrt(1.0 / (g.Lx * g.Lx) + 4.0 / (g.Ly * g.Ly) + 9.0 / (g.Lz * g.Lz));
-    return sin(M_PI * x / g.Lx) * sin(2.0 * M_PI * y / g.Ly) * sin(3.0 * M_PI * z / g.Lz) * cos(at * t);
+inline double u_analytical(const Grid& g, double x, double y, double z, double t) {
+    double at = (M_PI / 2.0) * std::sqrt(1.0 / (g.Lx * g.Lx) + 4.0 / (g.Ly * g.Ly) + 9.0 / (g.Lz * g.Lz));
+    return std::sin(M_PI * x / g.Lx)
+         * std::sin(2.0 * M_PI * y / g.Ly)
+         * std::sin(3.0 * M_PI * z / g.Lz)
+         * std::cos(at * t);
 }
 
-void solve(Grid& grid, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result, int& threads_num);
-
+void solve(Grid& grid, double& time, double& max_inaccuracy,
+           double& first_step_inaccuracy, double& last_step_inaccuracy,
+           VDOUB& result, int threads_num);
 #endif
