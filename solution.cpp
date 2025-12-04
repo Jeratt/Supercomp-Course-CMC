@@ -1,390 +1,418 @@
 #define _USE_MATH_DEFINES
-#include "equation.h"
-#include <algorithm>
-#include <iostream>
-#include <chrono>
-#include <cmath>
+#include "equation.hpp"
 #include <mpi.h>
+#include <cmath>
+#include <iostream>
+#include <algorithm>
+#include <vector>
+using namespace std;
 
-// update halo for neighbors processes
-void exchange_ghost_layers(Block& b, VDOUB& ui_local, MPI_Comm& comm_cart, const Grid& g, const int& dim0_n, const int& dim1_n, const int& dim2_n) {
-    MPI_Request reqs[12];
-    int req_count = 0;
+inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
+    double d2x = (u[b.local_index(i-1, j, k)] - 2.0*u[b.local_index(i, j, k)] + u[b.local_index(i+1, j, k)]) 
+                / (g.h_x * g.h_x);
     
-    // Send and receive for Y direction (periodic)
-    if (dim0_n > 1) {
-        // Left (Y-)
-        if (b.neighbors[0] != MPI_PROC_NULL && b.neighbors[0] != b.rank) {
-            MPI_Isend(b.left_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], b.rank * 6 + 0, comm_cart, &reqs[req_count++]);
-            MPI_Irecv(b.left_recieve.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], b.neighbors[1] * 6 + 0, comm_cart, &reqs[req_count++]);
-        }
-        // Right (Y+)
-        if (b.neighbors[1] != MPI_PROC_NULL && b.neighbors[1] != b.rank) {
-            MPI_Isend(b.right_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], b.rank * 6 + 1, comm_cart, &reqs[req_count++]);
-            MPI_Irecv(b.right_recieve.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], b.neighbors[0] * 6 + 1, comm_cart, &reqs[req_count++]);
-        }
-    }
+    double d2y = (u[b.local_index(i, j-1, k)] - 2.0*u[b.local_index(i, j, k)] + u[b.local_index(i, j+1, k)]) 
+                / (g.h_y * g.h_y);
     
-    // Send and receive for X direction (Dirichlet on boundaries)
-    if (dim1_n > 1) {
-        // Bottom (X-)
-        if (b.neighbors[2] != MPI_PROC_NULL && b.neighbors[2] != b.rank) {
-            MPI_Isend(b.bottom_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], b.rank * 6 + 2, comm_cart, &reqs[req_count++]);
-            MPI_Irecv(b.bottom_recieve.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], b.neighbors[3] * 6 + 2, comm_cart, &reqs[req_count++]);
-        }
-        // Top (X+)
-        if (b.neighbors[3] != MPI_PROC_NULL && b.neighbors[3] != b.rank) {
-            MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], b.rank * 6 + 3, comm_cart, &reqs[req_count++]);
-            MPI_Irecv(b.top_recieve.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], b.neighbors[2] * 6 + 3, comm_cart, &reqs[req_count++]);
-        }
-    }
+    double d2z = (u[b.local_index(i, j, k-1)] - 2.0*u[b.local_index(i, j, k)] + u[b.local_index(i, j, k+1)]) 
+                / (g.h_z * g.h_z);
     
-    // Send and receive for Z direction (Dirichlet on boundaries)
-    if (dim2_n > 1) {
-        // Front (Z-)
-        if (b.neighbors[4] != MPI_PROC_NULL && b.neighbors[4] != b.rank) {
-            MPI_Isend(b.front_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], b.rank * 6 + 4, comm_cart, &reqs[req_count++]);
-            MPI_Irecv(b.front_recieve.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], b.neighbors[5] * 6 + 4, comm_cart, &reqs[req_count++]);
-        }
-        // Back (Z+)
-        if (b.neighbors[5] != MPI_PROC_NULL && b.neighbors[5] != b.rank) {
-            MPI_Isend(b.back_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], b.rank * 6 + 5, comm_cart, &reqs[req_count++]);
-            MPI_Irecv(b.back_recieve.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], b.neighbors[4] * 6 + 5, comm_cart, &reqs[req_count++]);
-        }
-    }
-    
-    if (req_count > 0) {
-        MPI_Waitall(req_count, reqs, MPI_STATUSES_IGNORE);
-    }
-    
-    // Copy received ghost layers into ui_local
-    // For Y direction (periodic)
-    if (dim0_n > 1) {
-        if (b.neighbors[0] != MPI_PROC_NULL && b.neighbors[0] != b.rank) {
-            for (int i = 1; i < b.Nx + 1; ++i) {
-                for (int k = 1; k < b.Nz + 1; ++k) {
-                    ui_local[b.index(i, 0, k)] = b.left_recieve[(i-1) * b.Nz + (k-1)];
-                }
-            }
-        }
-        if (b.neighbors[1] != MPI_PROC_NULL && b.neighbors[1] != b.rank) {
-            for (int i = 1; i < b.Nx + 1; ++i) {
-                for (int k = 1; k < b.Nz + 1; ++k) {
-                    ui_local[b.index(i, b.Ny + 1, k)] = b.right_recieve[(i-1) * b.Nz + (k-1)];
-                }
-            }
-        }
-    }
-    
-    // For X direction (Dirichlet)
-    if (dim1_n > 1) {
-        if (b.neighbors[2] != MPI_PROC_NULL && b.neighbors[2] != b.rank) {
-            for (int j = 1; j < b.Ny + 1; ++j) {
-                for (int k = 1; k < b.Nz + 1; ++k) {
-                    ui_local[b.index(0, j, k)] = b.bottom_recieve[(j-1) * b.Nz + (k-1)];
-                }
-            }
-        }
-        if (b.neighbors[3] != MPI_PROC_NULL && b.neighbors[3] != b.rank) {
-            for (int j = 1; j < b.Ny + 1; ++j) {
-                for (int k = 1; k < b.Nz + 1; ++k) {
-                    ui_local[b.index(b.Nx + 1, j, k)] = b.top_recieve[(j-1) * b.Nz + (k-1)];
-                }
-            }
-        }
-    }
-    
-    // For Z direction (Dirichlet)
-    if (dim2_n > 1) {
-        if (b.neighbors[4] != MPI_PROC_NULL && b.neighbors[4] != b.rank) {
-            for (int i = 1; i < b.Nx + 1; ++i) {
-                for (int j = 1; j < b.Ny + 1; ++j) {
-                    ui_local[b.index(i, j, 0)] = b.front_recieve[(i-1) * b.Ny + (j-1)];
-                }
-            }
-        }
-        if (b.neighbors[5] != MPI_PROC_NULL && b.neighbors[5] != b.rank) {
-            for (int i = 1; i < b.Nx + 1; ++i) {
-                for (int j = 1; j < b.Ny + 1; ++j) {
-                    ui_local[b.index(i, j, b.Nz + 1)] = b.back_recieve[(i-1) * b.Ny + (j-1)];
-                }
-            }
-        }
-    }
-    
-    // Apply boundary conditions
-    // X direction (Dirichlet - zeros on boundaries)
-    if (b.is_x_boundary_start) {
-        for (int j = 0; j < b.padded_Ny; ++j) {
-            for (int k = 0; k < b.padded_Nz; ++k) {
-                ui_local[b.index(0, j, k)] = 0.0;
-            }
-        }
-    }
-    if (b.is_x_boundary_end) {
-        for (int j = 0; j < b.padded_Ny; ++j) {
-            for (int k = 0; k < b.padded_Nz; ++k) {
-                ui_local[b.index(b.Nx + 1, j, k)] = 0.0;
-            }
-        }
-    }
-    
-    // Y direction (periodic)
-    if (dim0_n == 1) {
-        // Periodic conditions within a single block
-        for (int i = 0; i < b.padded_Nx; ++i) {
-            for (int k = 0; k < b.padded_Nz; ++k) {
-                ui_local[b.index(i, 0, k)] = ui_local[b.index(i, b.Ny, k)];
-                ui_local[b.index(i, b.Ny + 1, k)] = ui_local[b.index(i, 1, k)];
-            }
-        }
-    }
-    
-    // Z direction (Dirichlet - zeros on boundaries)
-    if (b.is_z_boundary_start) {
-        for (int i = 0; i < b.padded_Nx; ++i) {
-            for (int j = 0; j < b.padded_Ny; ++j) {
-                ui_local[b.index(i, j, 0)] = 0.0;
-            }
-        }
-    }
-    if (b.is_z_boundary_end) {
-        for (int i = 0; i < b.padded_Nx; ++i) {
-            for (int j = 0; j < b.padded_Ny; ++j) {
-                ui_local[b.index(i, j, b.Nz + 1)] = 0.0;
-            }
-        }
-    }
+    return d2x + d2y + d2z;
 }
 
-inline void fill_send_buffers(Block& b, VDOUB& ui_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, const int& i, const int& j, const int& k) {
-    // Y direction (periodic)
-    if (dim0_n > 1) {
-        if (b.is_y_boundary_start && j == 1) {
-            int idx = (i-1) * b.Nz + (k-1);
-            if (idx >= 0 && idx < b.left_send.size()) {
-                b.left_send[idx] = ui_local[b.index(i, j, k)];
+void exchange_halos(Block& b, VDOUB& u, MPI_Comm comm) {
+    // Unique tags for each direction and process
+    const int base_tag = 1000;
+    int tags[6];
+    for (int i = 0; i < 6; i++) {
+        tags[i] = base_tag + b.rank * 6 + i;
+    }
+    
+    MPI_Request req[12];
+    int nreq = 0;
+    
+    // X direction neighbors (Dirichlet)
+    if (b.neighbors[0] != MPI_PROC_NULL) { // left
+        // Fill send buffer
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.left_send[idx] = u[b.local_index(1, j, k)];
+                
+        // Post receives first
+        MPI_Irecv(b.left_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[1], comm, &req[nreq++]);
+        // Then sends
+        MPI_Isend(b.left_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[0], comm, &req[nreq++]);
+    }
+    
+    if (b.neighbors[1] != MPI_PROC_NULL) { // right
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.right_send[idx] = u[b.local_index(b.Nx, j, k)];
+                
+        MPI_Irecv(b.right_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[0], comm, &req[nreq++]);
+        MPI_Isend(b.right_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[1], comm, &req[nreq++]);
+    }
+    
+    // Y direction neighbors (Periodic) - CRITICAL SECTION
+    if (b.neighbors[2] != MPI_PROC_NULL) { // bottom (y-)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.bottom_send[idx] = u[b.local_index(i, 1, k)];
+                
+        MPI_Irecv(b.bottom_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[3], comm, &req[nreq++]);
+        MPI_Isend(b.bottom_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[2], comm, &req[nreq++]);
+    }
+    
+    if (b.neighbors[3] != MPI_PROC_NULL) { // top (y+)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                b.top_send[idx] = u[b.local_index(i, b.Ny, k)];
+                
+        MPI_Irecv(b.top_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[2], comm, &req[nreq++]);
+        MPI_Isend(b.top_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[3], comm, &req[nreq++]);
+    }
+    
+    // Z direction neighbors (Dirichlet)
+    if (b.neighbors[4] != MPI_PROC_NULL) { // front (z-)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                b.front_send[idx] = u[b.local_index(i, j, 1)];
+                
+        MPI_Irecv(b.front_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[5], comm, &req[nreq++]);
+        MPI_Isend(b.front_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[4], comm, &req[nreq++]);
+    }
+    
+    if (b.neighbors[5] != MPI_PROC_NULL) { // back (z+)
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                b.back_send[idx] = u[b.local_index(i, j, b.Nz)];
+                
+        MPI_Irecv(b.back_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[4], comm, &req[nreq++]);
+        MPI_Isend(b.back_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[5], comm, &req[nreq++]);
+    }
+    
+    // Wait for all communications to complete
+    if (nreq > 0)
+        MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
+    
+    // Update halo cells
+    if (b.neighbors[0] != MPI_PROC_NULL) {
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(0, j, k)] = b.left_recv[idx];
+    }
+    
+    if (b.neighbors[1] != MPI_PROC_NULL) {
+        for (int idx = 0, j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(b.Nx+1, j, k)] = b.right_recv[idx];
+    }
+    
+    if (b.neighbors[2] != MPI_PROC_NULL) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(i, 0, k)] = b.bottom_recv[idx];
+    }
+    
+    if (b.neighbors[3] != MPI_PROC_NULL) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int k = 1; k <= b.Nz; ++k, ++idx)
+                u[b.local_index(i, b.Ny+1, k)] = b.top_recv[idx];
+    }
+    
+    if (b.neighbors[4] != MPI_PROC_NULL) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                u[b.local_index(i, j, 0)] = b.front_recv[idx];
+    }
+    
+    if (b.neighbors[5] != MPI_PROC_NULL) {
+        for (int idx = 0, i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j, ++idx)
+                u[b.local_index(i, j, b.Nz+1)] = b.back_recv[idx];
+    }
+    
+    // SPECIAL HANDLING FOR PERIODIC BOUNDARIES AT DOMAIN EDGES
+    // This is critical for Y-direction periodicity
+    MPI_Comm comm_cart_y;
+    MPI_Comm_split(comm, 1, b.coord_y, &comm_cart_y);
+    
+    int y_size;
+    MPI_Comm_size(comm_cart_y, &y_size);
+    int y_rank;
+    MPI_Comm_rank(comm_cart_y, &y_rank);
+    
+    if (y_size > 1) {
+        if (y_rank == 0) {
+            // Bottom process in Y dimension
+            for (int i = 1; i <= b.Nx; ++i) {
+                for (int k = 1; k <= b.Nz; ++k) {
+                    // Send bottom row to top process
+                    double val = u[b.local_index(i, 1, k)];
+                    MPI_Send(&val, 1, MPI_DOUBLE, y_size-1, tags[4], comm_cart_y);
+                    // Receive top row from top process
+                    MPI_Recv(&u[b.local_index(i, 0, k)], 1, MPI_DOUBLE, y_size-1, tags[5], comm_cart_y, MPI_STATUS_IGNORE);
+                }
+            }
+        } else if (y_rank == y_size-1) {
+            // Top process in Y dimension
+            for (int i = 1; i <= b.Nx; ++i) {
+                for (int k = 1; k <= b.Nz; ++k) {
+                    // Receive bottom row from bottom process
+                    MPI_Recv(&u[b.local_index(i, b.Ny+1, k)], 1, MPI_DOUBLE, 0, tags[4], comm_cart_y, MPI_STATUS_IGNORE);
+                    // Send top row to bottom process
+                    double val = u[b.local_index(i, b.Ny, k)];
+                    MPI_Send(&val, 1, MPI_DOUBLE, 0, tags[5], comm_cart_y);
+                }
             }
         }
-        if (b.is_y_boundary_end && j == b.Ny) {
-            int idx = (i-1) * b.Nz + (k-1);
-            if (idx >= 0 && idx < b.right_send.size()) {
-                b.right_send[idx] = ui_local[b.index(i, j, k)];
+    } else {
+        // Single process in Y dimension - just copy values
+        for (int i = 0; i <= b.Nx+1; ++i) {
+            for (int k = 0; k <= b.Nz+1; ++k) {
+                u[b.local_index(i, 0, k)] = u[b.local_index(i, b.Ny, k)];
+                u[b.local_index(i, b.Ny+1, k)] = u[b.local_index(i, 1, k)];
             }
         }
     }
     
-    // X direction (Dirichlet - no need to send boundary values as they are zero)
-    if (dim1_n > 1) {
-        if (!b.is_x_boundary_start && i == 1) {
-            int idx = (j-1) * b.Nz + (k-1);
-            if (idx >= 0 && idx < b.bottom_send.size()) {
-                b.bottom_send[idx] = ui_local[b.index(i, j, k)];
-            }
-        }
-        if (!b.is_x_boundary_end && i == b.Nx) {
-            int idx = (j-1) * b.Nz + (k-1);
-            if (idx >= 0 && idx < b.top_send.size()) {
-                b.top_send[idx] = ui_local[b.index(i, j, k)];
-            }
-        }
-    }
-    
-    // Z direction (Dirichlet - no need to send boundary values as they are zero)
-    if (dim2_n > 1) {
-        if (!b.is_z_boundary_start && k == 1) {
-            int idx = (i-1) * b.Ny + (j-1);
-            if (idx >= 0 && idx < b.front_send.size()) {
-                b.front_send[idx] = ui_local[b.index(i, j, k)];
-            }
-        }
-        if (!b.is_z_boundary_end && k == b.Nz) {
-            int idx = (i-1) * b.Ny + (j-1);
-            if (idx >= 0 && idx < b.back_send.size()) {
-                b.back_send[idx] = ui_local[b.index(i, j, k)];
-            }
-        }
-    }
+    MPI_Comm_free(&comm_cart_y);
 }
 
-inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& ui_local, const int& i, const int& j, const int& k) {
-    return (ui_local[b.index(i - 1, j, k)] - 2 * ui_local[b.index(i, j, k)] + ui_local[b.index(i + 1, j, k)]) / (g.h_x * g.h_x) +
-           (ui_local[b.index(i, j - 1, k)] - 2 * ui_local[b.index(i, j, k)] + ui_local[b.index(i, j + 1, k)]) / (g.h_y * g.h_y) +
-           (ui_local[b.index(i, j, k - 1)] - 2 * ui_local[b.index(i, j, k)] + ui_local[b.index(i, j, k + 1)]) / (g.h_z * g.h_z);
+void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u) {
+    // X boundaries - Dirichlet (u=0)
+    if (b.x_start == 0) {
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k)
+                u[b.local_index(0, j, k)] = 0.0;
+    }
+    
+    if (b.x_end == g.N) {
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k)
+                u[b.local_index(b.Nx+1, j, k)] = 0.0;
+    }
+    
+    // Z boundaries - Dirichlet (u=0)
+    if (b.z_start == 0) {
+        for (int i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j)
+                u[b.local_index(i, j, 0)] = 0.0;
+    }
+    
+    if (b.z_end == g.N) {
+        for (int i = 1; i <= b.Nx; ++i)
+            for (int j = 1; j <= b.Ny; ++j)
+                u[b.local_index(i, j, b.Nz+1)] = 0.0;
+    }
+    
+    // Y boundaries are handled by periodic conditions in exchange_halos
 }
 
-void init(const Grid& g, Block& b, VVEC& u_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& max_inaccuracy, double& first_step_inaccuracy) {
-    // Initialize all values to zero
-    for (int i = 0; i < b.N; ++i) {
-        u_local[0][i] = 0.0;
-        u_local[1][i] = 0.0;
-    }
-    
-    // Set boundary conditions and initial values
-    for (int i = 1; i < b.Nx + 1; ++i) {
-        double global_x = (b.x_start + i - 1) * g.h_x;
-        for (int j = 1; j < b.Ny + 1; ++j) {
-            double global_y = (b.y_start + j - 1) * g.h_y;
-            for (int k = 1; k < b.Nz + 1; ++k) {
-                double global_z = (b.z_start + k - 1) * g.h_z;
-                
-                bool on_x_boundary = (b.is_x_boundary_start && i == 1) || (b.is_x_boundary_end && i == b.Nx);
-                bool on_z_boundary = (b.is_z_boundary_start && k == 1) || (b.is_z_boundary_end && k == b.Nz);
-                
-                if (on_x_boundary || on_z_boundary) {
-                    // Dirichlet boundary conditions (zero)
-                    u_local[0][b.index(i, j, k)] = 0.0;
-                } else {
-                    // Internal points - use analytical solution for t=0
-                    u_local[0][b.index(i, j, k)] = u_analytical(g, global_x, global_y, global_z, 0.0);
-                }
-                
-                // Fill send buffers
-                fill_send_buffers(b, u_local[0], dim0_n, dim1_n, dim2_n, i, j, k);
-            }
-        }
-    }
-    
-    // Exchange ghost layers
-    exchange_ghost_layers(b, u_local[0], comm_cart, g, dim0_n, dim1_n, dim2_n);
-    
-    // Calculate u_1 (12)
-    for (int i = 1; i < b.Nx + 1; ++i) {
-        double global_x = (b.x_start + i - 1) * g.h_x;
-        for (int j = 1; j < b.Ny + 1; ++j) {
-            double global_y = (b.y_start + j - 1) * g.h_y;
-            for (int k = 1; k < b.Nz + 1; ++k) {
-                double global_z = (b.z_start + k - 1) * g.h_z;
-                
-                bool on_x_boundary = (b.is_x_boundary_start && i == 1) || (b.is_x_boundary_end && i == b.Nx);
-                bool on_z_boundary = (b.is_z_boundary_start && k == 1) || (b.is_z_boundary_end && k == b.Nz);
-                
-                if (on_x_boundary || on_z_boundary) {
-                    // Dirichlet boundary conditions (zero)
-                    u_local[1][b.index(i, j, k)] = 0.0;
-                } else {
-                    // Internal points
-                    u_local[1][b.index(i, j, k)] = u_local[0][b.index(i, j, k)] + 0.5 * (g.tau * g.tau) * laplace_operator(g, b, u_local[0], i, j, k);
-                }
-                
-                // Fill send buffers
-                fill_send_buffers(b, u_local[1], dim0_n, dim1_n, dim2_n, i, j, k);
-            }
-        }
-    }
-    
-    // Exchange ghost layers for u_1
-    exchange_ghost_layers(b, u_local[1], comm_cart, g, dim0_n, dim1_n, dim2_n);
-    
-    // Calculate error for step 1
-    double error = -1.0;
-    for (int i = 1; i < b.Nx + 1; ++i) {
-        double global_x = (b.x_start + i - 1) * g.h_x;
-        for (int j = 1; j < b.Ny + 1; ++j) {
-            double global_y = (b.y_start + j - 1) * g.h_y;
-            for (int k = 1; k < b.Nz + 1; ++k) {
-                double global_z = (b.z_start + k - 1) * g.h_z;
-                
-                double analytical_value = u_analytical(g, global_x, global_y, global_z, g.tau);
-                double tmp = fabs(u_local[1][b.index(i, j, k)] - analytical_value);
-                if (tmp > error)
-                    error = tmp;
-            }
-        }
-    }
-    
-    double step_max_error = -1.0;
-    MPI_Reduce(&error, &step_max_error, 1, MPI_DOUBLE, MPI_MAX, 0, comm_cart);
-    
-    if (b.rank == 0) {
-        if (step_max_error > max_inaccuracy)
-            max_inaccuracy = step_max_error;
-        first_step_inaccuracy = step_max_error;
-        std::cout << "Steps inaccuracy:\n\tMax inaccuracy on step 1 = " << step_max_error << std::endl;
-    }
-}
-
-void run_algo(const Grid& g, Block& b, VVEC& u_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& max_inaccuracy, double& last_step_inaccuracy) {
-    int next, curr, prev;
-    for (int s = 2; s < TIME_STEPS; ++s) {
-        next = s % 3;
-        curr = (s - 1) % 3;
-        prev = (s - 2) % 3;
+void init(const Grid& g, Block& b, VVEC& u, MPI_Comm comm, 
+          double& max_inaccuracy, double& first_step_inaccuracy) {
+    // Initialize u^0 with analytical solution
+    for (int i = 0; i <= b.Nx+1; ++i) {
+        int i_global = b.x_start + i - 1;
+        if (i_global < 0 || i_global > g.N) continue;
+        double x = i_global * g.h_x;
         
-        // Exchange ghost layers for current time step
-        exchange_ghost_layers(b, u_local[curr], comm_cart, g, dim0_n, dim1_n, dim2_n);
-        
-        // Calculate next time step
-        for (int i = 1; i < b.Nx + 1; ++i) {
-            double global_x = (b.x_start + i - 1) * g.h_x;
-            for (int j = 1; j < b.Ny + 1; ++j) {
-                double global_y = (b.y_start + j - 1) * g.h_y;
-                for (int k = 1; k < b.Nz + 1; ++k) {
-                    double global_z = (b.z_start + k - 1) * g.h_z;
-                    
-                    bool on_x_boundary = (b.is_x_boundary_start && i == 1) || (b.is_x_boundary_end && i == b.Nx);
-                    bool on_z_boundary = (b.is_z_boundary_start && k == 1) || (b.is_z_boundary_end && k == b.Nz);
-                    
-                    if (on_x_boundary || on_z_boundary) {
-                        // Dirichlet boundary conditions (zero)
-                        u_local[next][b.index(i, j, k)] = 0.0;
-                    } else {
-                        // Internal points
-                        u_local[next][b.index(i, j, k)] = 2 * u_local[curr][b.index(i, j, k)] - u_local[prev][b.index(i, j, k)] + 
-                                                        (g.tau * g.tau) * laplace_operator(g, b, u_local[curr], i, j, k);
-                    }
-                    
-                    // Fill send buffers
-                    fill_send_buffers(b, u_local[next], dim0_n, dim1_n, dim2_n, i, j, k);
-                }
-            }
-        }
-        
-        // Calculate error for current step
-        double error = -1.0;
-        for (int i = 1; i < b.Nx + 1; ++i) {
-            double global_x = (b.x_start + i - 1) * g.h_x;
-            for (int j = 1; j < b.Ny + 1; ++j) {
-                double global_y = (b.y_start + j - 1) * g.h_y;
-                for (int k = 1; k < b.Nz + 1; ++k) {
-                    double global_z = (b.z_start + k - 1) * g.h_z;
-                    
-                    double analytical_value = u_analytical(g, global_x, global_y, global_z, g.tau * s);
-                    double tmp = fabs(u_local[next][b.index(i, j, k)] - analytical_value);
-                    if (tmp > error)
-                        error = tmp;
-                }
-            }
-        }
-        
-        double step_max_error = -1.0;
-        MPI_Reduce(&error, &step_max_error, 1, MPI_DOUBLE, MPI_MAX, 0, comm_cart);
-        
-        if (b.rank == 0) {
-            if (step_max_error > max_inaccuracy)
-                max_inaccuracy = step_max_error;
+        for (int j = 0; j <= b.Ny+1; ++j) {
+            int j_global = b.y_start + j - 1;
+            if (j_global < 0 || j_global > g.N) continue;
+            double y = j_global * g.h_y;
             
-            if (s == TIME_STEPS - 1)
-                last_step_inaccuracy = step_max_error;
+            for (int k = 0; k <= b.Nz+1; ++k) {
+                int k_global = b.z_start + k - 1;
+                if (k_global < 0 || k_global > g.N) continue;
+                double z = k_global * g.h_z;
                 
-            std::cout << "\tMax inaccuracy on step " << s << " = " << step_max_error << std::endl;
+                u[0][b.local_index(i, j, k)] = u_analytical(g, x, y, z, 0.0);
+            }
         }
+    }
+    
+    // Exchange halos for u^0
+    exchange_halos(b, u[0], comm);
+    
+    // Apply boundary conditions for u^0
+    apply_boundary_conditions(g, b, u[0]);
+    
+    // Initialize u^1 for internal points
+    for (int i = 1; i <= b.Nx; ++i) {
+        int i_global = b.x_start + i - 1;
+        double x = i_global * g.h_x;
+        
+        for (int j = 1; j <= b.Ny; ++j) {
+            int j_global = b.y_start + j - 1;
+            double y = j_global * g.h_y;
+            
+            for (int k = 1; k <= b.Nz; ++k) {
+                int k_global = b.z_start + k - 1;
+                double z = k_global * g.h_z;
+                
+                if (i_global > 0 && i_global < g.N && 
+                    j_global > 0 && j_global < g.N && 
+                    k_global > 0 && k_global < g.N) {
+                    // Internal points
+                    u[1][b.local_index(i, j, k)] = u[0][b.local_index(i, j, k)]
+                        + 0.5 * g.a2 * g.tau * g.tau * laplace_operator(g, b, u[0], i, j, k);
+                } else {
+                    // Boundary points - use analytical solution
+                    u[1][b.local_index(i, j, k)] = u_analytical(g, x, y, z, g.tau);
+                }
+            }
+        }
+    }
+    
+    // Exchange halos for u^1
+    exchange_halos(b, u[1], comm);
+    
+    // Apply boundary conditions for u^1
+    apply_boundary_conditions(g, b, u[1]);
+    
+    // Compute error for u^1
+    double local_max_err = 0.0;
+    double t = g.tau;
+    
+    for (int i = 1; i <= b.Nx; ++i) {
+        int i_global = b.x_start + i - 1;
+        double x = i_global * g.h_x;
+        
+        for (int j = 1; j <= b.Ny; ++j) {
+            int j_global = b.y_start + j - 1;
+            double y = j_global * g.h_y;
+            
+            for (int k = 1; k <= b.Nz; ++k) {
+                int k_global = b.z_start + k - 1;
+                double z = k_global * g.h_z;
+                
+                double exact = u_analytical(g, x, y, z, t);
+                double err = fabs(u[1][b.local_index(i, j, k)] - exact);
+                if (err > local_max_err) local_max_err = err;
+            }
+        }
+    }
+    
+    double global_max_err;
+    MPI_Allreduce(&local_max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    
+    max_inaccuracy = global_max_err;
+    first_step_inaccuracy = global_max_err;
+    
+    if (b.rank == 0)
+        cout << "Max start inaccuracy: " << global_max_err << endl;
+}
+
+void run_algo(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
+              double& max_inaccuracy, double& last_step_inaccuracy) {
+    for (int step = 2; step < TIME_STEPS; ++step) {
+        int prev = (step-2) % 3;
+        int curr = (step-1) % 3;
+        int next = step % 3;
+        double t = step * g.tau;
+        
+        // Compute internal points
+        for (int i = 1; i <= b.Nx; ++i) {
+            int i_global = b.x_start + i - 1;
+            double x = i_global * g.h_x;
+            
+            for (int j = 1; j <= b.Ny; ++j) {
+                int j_global = b.y_start + j - 1;
+                double y = j_global * g.h_y;
+                
+                for (int k = 1; k <= b.Nz; ++k) {
+                    int k_global = b.z_start + k - 1;
+                    double z = k_global * g.h_z;
+                    
+                    if (i_global > 0 && i_global < g.N && 
+                        j_global > 0 && j_global < g.N && 
+                        k_global > 0 && k_global < g.N) {
+                        // Internal points: explicit scheme
+                        u[next][b.local_index(i, j, k)] = 2.0 * u[curr][b.local_index(i, j, k)]
+                            - u[prev][b.local_index(i, j, k)]
+                            + g.a2 * g.tau * g.tau * laplace_operator(g, b, u[curr], i, j, k);
+                    } else {
+                        // Boundary points: analytical solution
+                        u[next][b.local_index(i, j, k)] = u_analytical(g, x, y, z, t);
+                    }
+                }
+            }
+        }
+        
+        // Exchange halos
+        exchange_halos(b, u[next], comm);
+        
+        // Apply boundary conditions
+        apply_boundary_conditions(g, b, u[next]);
+        
+        // Compute error
+        double local_max_err = 0.0;
+        
+        for (int i = 1; i <= b.Nx; ++i) {
+            int i_global = b.x_start + i - 1;
+            double x = i_global * g.h_x;
+            
+            for (int j = 1; j <= b.Ny; ++j) {
+                int j_global = b.y_start + j - 1;
+                double y = j_global * g.h_y;
+                
+                for (int k = 1; k <= b.Nz; ++k) {
+                    int k_global = b.z_start + k - 1;
+                    double z = k_global * g.h_z;
+                    
+                    double exact = u_analytical(g, x, y, z, t);
+                    double err = fabs(u[next][b.local_index(i, j, k)] - exact);
+                    if (err > local_max_err) local_max_err = err;
+                }
+            }
+        }
+        
+        double global_max_err;
+        MPI_Allreduce(&local_max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        
+        if (global_max_err > max_inaccuracy)
+            max_inaccuracy = global_max_err;
+            
+        if (step == TIME_STEPS-1)
+            last_step_inaccuracy = global_max_err;
+            
+        if (b.rank == 0)
+            cout << "Step " << step << ": max inaccuracy = " << global_max_err << endl;
     }
 }
 
-void solve_equation(const Grid& grid, Block& block, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result) {
-    VDOUB u0_local(block.N, 0.0), u1_local(block.N, 0.0), u2_local(block.N, 0.0);
-    VVEC u_local{u0_local, u1_local, u2_local};
+void solve_mpi(const Grid& g, Block& b,
+               int dimx, int dimy, int dimz,
+               MPI_Comm comm_cart,
+               double& time,
+               double& max_inaccuracy,
+               double& first_step_inaccuracy,
+               double& last_step_inaccuracy,
+               VDOUB& result) {
+    int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
+    VDOUB u0(total_size), u1(total_size), u2(total_size);
+    VVEC u = {u0, u1, u2};
     
-    MPI_Barrier(MPI_COMM_WORLD);
-    double start_time = MPI_Wtime();
+    double start = MPI_Wtime();
     
-    init(grid, block, u_local, dim0_n, dim1_n, dim2_n, comm_cart, max_inaccuracy, first_step_inaccuracy);
-    run_algo(grid, block, u_local, dim0_n, dim1_n, dim2_n, comm_cart, max_inaccuracy, last_step_inaccuracy);
+    // Initialization and first time step
+    init(g, b, u, comm_cart, max_inaccuracy, first_step_inaccuracy);
     
-    double end_time = MPI_Wtime();
-    double local_time = end_time - start_time;
-    MPI_Reduce(&local_time, &time, 1, MPI_DOUBLE, MPI_MAX, 0, comm_cart);
+    // Main time loop
+    run_algo(g, b, u, comm_cart, max_inaccuracy, last_step_inaccuracy);
     
-    result = u_local[(TIME_STEPS - 1) % 3];
+    double end = MPI_Wtime();
+    time = end - start;
+    
+    // Collect result
+    result.resize(b.Nx * b.Ny * b.Nz);
+    int next = (TIME_STEPS-1) % 3;
+    
+    for (int i = 1; i <= b.Nx; ++i)
+        for (int j = 1; j <= b.Ny; ++j)
+            for (int k = 1; k <= b.Nz; ++k) {
+                int idx = (i-1)*b.Ny*b.Nz + (j-1)*b.Nz + (k-1);
+                result[idx] = u[next][b.local_index(i, j, k)];
+            }
 }
