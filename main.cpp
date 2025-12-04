@@ -54,11 +54,11 @@ int main(int argc, char* argv[]) {
              << "  Domain label = " << grid.domain_label << endl;
     }
     
-    // Автоматическое создание сбалансированной топологии с помощью MPI_Dims_create
+    // Автоматическое создание сбалансированной топологии
     int dims[3] = {0, 0, 0};
     MPI_Dims_create(np, 3, dims);
     
-    // Периодичность: только по оси y (индекс 1) для варианта 3
+    // Периодичность: только по оси y (индекс 1)
     int periods[3] = {0, 1, 0};
     
     if (rank == 0) {
@@ -75,23 +75,32 @@ int main(int argc, char* argv[]) {
     MPI_Cart_coords(comm_cart, rank, 3, coords);
     
     // Определение соседей для обмена гало-ячейками
-    vector<int> neighbors(6, -1);
+    int neighbors[6];
     int dummy;
     
     // X direction neighbors
-    MPI_Cart_shift(comm_cart, 0, -1, &neighbors[0], &dummy); // left (x-) neighbor
-    MPI_Cart_shift(comm_cart, 0, 1, &dummy, &neighbors[1]);  // right (x+) neighbor
+    MPI_Cart_shift(comm_cart, 0, -1, &neighbors[0], &dummy);
+    MPI_Cart_shift(comm_cart, 0, 1, &dummy, &neighbors[1]);
     
     // Y direction neighbors (periodic)
-    MPI_Cart_shift(comm_cart, 1, -1, &neighbors[2], &dummy); // bottom (y-) neighbor
-    MPI_Cart_shift(comm_cart, 1, 1, &dummy, &neighbors[3]);  // top (y+) neighbor
+    MPI_Cart_shift(comm_cart, 1, -1, &neighbors[2], &dummy);
+    MPI_Cart_shift(comm_cart, 1, 1, &dummy, &neighbors[3]);
     
     // Z direction neighbors
-    MPI_Cart_shift(comm_cart, 2, -1, &neighbors[4], &dummy); // front (z-) neighbor
-    MPI_Cart_shift(comm_cart, 2, 1, &dummy, &neighbors[5]);  // back (z+) neighbor
+    MPI_Cart_shift(comm_cart, 2, -1, &neighbors[4], &dummy);
+    MPI_Cart_shift(comm_cart, 2, 1, &dummy, &neighbors[5]);
+    
+    // Преобразуем в vector<int> и заменяем MPI_PROC_NULL на -1
+    vector<int> neighbors_vec(6);
+    for (int i = 0; i < 6; ++i) {
+        if (neighbors[i] == MPI_PROC_NULL) 
+            neighbors_vec[i] = MPI_PROC_NULL;
+        else 
+            neighbors_vec[i] = neighbors[i];
+    }
     
     // Создание блока данных для текущего процесса
-    Block block(grid, neighbors, coords, dims[0], dims[1], dims[2], rank);
+    Block block(grid, neighbors_vec, coords, dims[0], dims[1], dims[2], rank);
     
     // Результаты
     VDOUB result;

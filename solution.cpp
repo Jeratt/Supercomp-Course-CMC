@@ -5,6 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <cstring>
 using namespace std;
 
 inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
@@ -20,103 +21,114 @@ inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, i
     return d2x + d2y + d2z;
 }
 
-void exchange_halos(Block& b, VDOUB& u) {
-    const int tag_size = 100;
+// Безопасный обмен гало-ячейками с уникальными тегами для КАЖДОГО направления
+void exchange_halos_safe(Block& b, VDOUB& u) {
+    // Уникальные теги для КАЖДОГО направления и КАЖДОГО процесса
+    const int base_tag = 1000;
+    const int tags[6] = {
+        base_tag + b.rank * 6,     // left (x-)
+        base_tag + b.rank * 6 + 1, // right (x+)
+        base_tag + b.rank * 6 + 2, // bottom (y-)
+        base_tag + b.rank * 6 + 3, // top (y+)
+        base_tag + b.rank * 6 + 4, // front (z-)
+        base_tag + b.rank * 6 + 5  // back (z+)
+    };
+    
     MPI_Request req[12];
     int nreq = 0;
     
     // X direction - Dirichlet (1st order)
-    if (b.neighbors[0] != -1) {
+    if (b.neighbors[0] != MPI_PROC_NULL) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 b.left_send[idx] = u[b.local_index(1, j, k)];
                 
-        MPI_Irecv(b.left_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], 1, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.left_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], 2, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.left_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[1], MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.left_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[0], MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    if (b.neighbors[1] != -1) {
+    if (b.neighbors[1] != MPI_PROC_NULL) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 b.right_send[idx] = u[b.local_index(b.Nx, j, k)];
                 
-        MPI_Irecv(b.right_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], 2, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.right_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], 1, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.right_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[0], MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.right_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[1], MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    // Y direction - Periodic
-    if (b.neighbors[2] != -1) {
+    // Y direction - Periodic (НОВЫЙ БЕЗОПАСНЫЙ ПОДХОД)
+    if (b.neighbors[2] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 b.bottom_send[idx] = u[b.local_index(i, 1, k)];
                 
-        MPI_Irecv(b.bottom_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], 3, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.bottom_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], 4, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.bottom_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[3], MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.bottom_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[2], MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    if (b.neighbors[3] != -1) {
+    if (b.neighbors[3] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 b.top_send[idx] = u[b.local_index(i, b.Ny, k)];
                 
-        MPI_Irecv(b.top_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], 4, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.top_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], 3, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.top_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[2], MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.top_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[3], MPI_COMM_WORLD, &req[nreq++]);
     }
     
     // Z direction - Dirichlet (1st order)
-    if (b.neighbors[4] != -1) {
+    if (b.neighbors[4] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
                 b.front_send[idx] = u[b.local_index(i, j, 1)];
                 
-        MPI_Irecv(b.front_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], 5, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.front_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], 6, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.front_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[5], MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.front_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[4], MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    if (b.neighbors[5] != -1) {
+    if (b.neighbors[5] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
                 b.back_send[idx] = u[b.local_index(i, j, b.Nz)];
                 
-        MPI_Irecv(b.back_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], 6, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.back_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], 5, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.back_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[4], MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.back_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[5], MPI_COMM_WORLD, &req[nreq++]);
     }
     
     if (nreq > 0)
         MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
     
     // Update halo cells
-    if (b.neighbors[0] != -1) {
+    if (b.neighbors[0] != MPI_PROC_NULL) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 u[b.local_index(0, j, k)] = b.left_recv[idx];
     }
     
-    if (b.neighbors[1] != -1) {
+    if (b.neighbors[1] != MPI_PROC_NULL) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 u[b.local_index(b.Nx+1, j, k)] = b.right_recv[idx];
     }
     
-    if (b.neighbors[2] != -1) {
+    if (b.neighbors[2] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 u[b.local_index(i, 0, k)] = b.bottom_recv[idx];
     }
     
-    if (b.neighbors[3] != -1) {
+    if (b.neighbors[3] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 u[b.local_index(i, b.Ny+1, k)] = b.top_recv[idx];
     }
     
-    if (b.neighbors[4] != -1) {
+    if (b.neighbors[4] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
                 u[b.local_index(i, j, 0)] = b.front_recv[idx];
     }
     
-    if (b.neighbors[5] != -1) {
+    if (b.neighbors[5] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
                 u[b.local_index(i, j, b.Nz+1)] = b.back_recv[idx];
@@ -174,7 +186,7 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inaccuracy, double& firs
     }
     
     // Exchange halos for u^0
-    exchange_halos(b, u[0]);
+    exchange_halos_safe(b, u[0]);
     
     // Apply boundary conditions for u^0
     apply_boundary_conditions(g, b, u[0]);
@@ -207,7 +219,7 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inaccuracy, double& firs
     }
     
     // Exchange halos for u^1
-    exchange_halos(b, u[1]);
+    exchange_halos_safe(b, u[1]);
     
     // Apply boundary conditions for u^1
     apply_boundary_conditions(g, b, u[1]);
@@ -280,8 +292,8 @@ void run_algo(const Grid& g, Block& b, VVEC& u, double& max_inaccuracy, double& 
             }
         }
         
-        // Exchange halos
-        exchange_halos(b, u[next]);
+        // Exchange halos - ИСПОЛЬЗУЕМ БЕЗОПАСНУЮ ВЕРСИЮ
+        exchange_halos_safe(b, u[next]);
         
         // Apply boundary conditions
         apply_boundary_conditions(g, b, u[next]);
