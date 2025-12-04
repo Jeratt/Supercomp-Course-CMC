@@ -24,19 +24,17 @@ int get_optimal_dimensions(int proc_num, int dims[3]) {
     dims[2] = 1; // z-направление (условие первого рода)
     
     // Пытаемся распределить процессы поровну по всем направлениям
-    for (int i = 1; i <= proc_num; ++i) {
-        if (proc_num % i == 0) {
-            int rest = proc_num / i;
-            for (int j = 1; j <= rest; ++j) {
-                if (rest % j == 0) {
-                    int k = rest / j;
-                    // Предпочитаем большее количество процессов в периодическом направлении (y)
-                    if (j > dims[0] || (j == dims[0] && i > dims[1]) || (j == dims[0] && i == dims[1] && k > dims[2])) {
-                        dims[0] = j; // y
-                        dims[1] = i; // x
-                        dims[2] = k; // z
-                    }
-                }
+    for (int k = 1; k <= proc_num; ++k) {
+        if (proc_num % k != 0) continue;
+        int rest = proc_num / k;
+        for (int j = 1; j <= rest; ++j) {
+            if (rest % j != 0) continue;
+            int i = rest / j;
+            // Предпочитаем большее количество процессов в периодическом направлении (y)
+            if (j > dims[0] || (j == dims[0] && i > dims[1]) || (j == dims[0] && i == dims[1] && k > dims[2])) {
+                dims[0] = j; // y
+                dims[1] = i; // x
+                dims[2] = k; // z
             }
         }
     }
@@ -51,7 +49,8 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &proc_num);
     
-    if (argc != 4) {
+    // ВАЖНО: Теперь ожидаем 4 аргумента + имя программы = 5 всего
+    if (argc != 5) {
         if (rank == 0) {
             std::cerr << "Usage: " << argv[0] << " N Lx Ly Lz\n"
                       << "  Lx, Ly, Lz: numbers (e.g. 1.0) or 'pi'\n";
@@ -112,6 +111,10 @@ int main(int argc, char* argv[]) {
     MPI_Cart_shift(comm_cart, 2, 1, &neighbors[4], &neighbors[5]); // z- и z+
     
     Block block(grid, neighbors, coords, dims[0], dims[1], dims[2], rank);
+    
+    if (rank == 0) {
+        block.print_block_info();
+    }
     
     // Инициализация переменных для результатов
     VDOUB result_vec;
