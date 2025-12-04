@@ -8,20 +8,21 @@
 using namespace std;
 
 inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
-    double d2x = (u[b.local_index(i-1, j, k)] - 2.0*u[b.local_index(i, j, k)] + u[b.local_index(i+1, j, k)]) 
+    double d2x = (u[b.index(i-1, j, k)] - 2.0*u[b.index(i, j, k)] + u[b.index(i+1, j, k)]) 
                 / (g.h_x * g.h_x);
     
-    double d2y = (u[b.local_index(i, j-1, k)] - 2.0*u[b.local_index(i, j, k)] + u[b.local_index(i, j+1, k)]) 
+    // Периодические условия по Y
+    double d2y = (u[b.index(i, j-1, k)] - 2.0*u[b.index(i, j, k)] + u[b.index(i, j+1, k)]) 
                 / (g.h_y * g.h_y);
     
-    double d2z = (u[b.local_index(i, j, k-1)] - 2.0*u[b.local_index(i, j, k)] + u[b.local_index(i, j, k+1)]) 
+    double d2z = (u[b.index(i, j, k-1)] - 2.0*u[b.index(i, j, k)] + u[b.index(i, j, k+1)]) 
                 / (g.h_z * g.h_z);
     
     return d2x + d2y + d2z;
 }
 
 void exchange_halos(Block& b, VDOUB& u, MPI_Comm comm) {
-    // Unique tags for each direction and process
+    // Уникальные теги для каждого направления
     const int base_tag = 1000;
     int tags[6];
     for (int i = 0; i < 6; i++) {
@@ -32,43 +33,43 @@ void exchange_halos(Block& b, VDOUB& u, MPI_Comm comm) {
     int nreq = 0;
     
     // X direction neighbors (Dirichlet)
-    if (b.neighbors[0] != MPI_PROC_NULL) { // left
+    if (b.neighbors[0] != MPI_PROC_NULL) { // left (x-)
         // Fill send buffer
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                b.left_send[idx] = u[b.local_index(1, j, k)];
+                b.left_send[idx] = u[b.index(1, j, k)];
                 
         // Post receives first
-        MPI_Irecv(b.left_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[1], comm, &req[nreq++]);
+        MPI_Irecv(b.left_recieve.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[1], comm, &req[nreq++]);
         // Then sends
         MPI_Isend(b.left_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[0], tags[0], comm, &req[nreq++]);
     }
     
-    if (b.neighbors[1] != MPI_PROC_NULL) { // right
+    if (b.neighbors[1] != MPI_PROC_NULL) { // right (x+)
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                b.right_send[idx] = u[b.local_index(b.Nx, j, k)];
+                b.right_send[idx] = u[b.index(b.Nx, j, k)];
                 
-        MPI_Irecv(b.right_recv.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[0], comm, &req[nreq++]);
+        MPI_Irecv(b.right_recieve.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[0], comm, &req[nreq++]);
         MPI_Isend(b.right_send.data(), b.Ny*b.Nz, MPI_DOUBLE, b.neighbors[1], tags[1], comm, &req[nreq++]);
     }
     
-    // Y direction neighbors (Periodic) - CRITICAL SECTION
+    // Y direction neighbors (Periodic)
     if (b.neighbors[2] != MPI_PROC_NULL) { // bottom (y-)
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                b.bottom_send[idx] = u[b.local_index(i, 1, k)];
+                b.bottom_send[idx] = u[b.index(i, 1, k)];
                 
-        MPI_Irecv(b.bottom_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[3], comm, &req[nreq++]);
+        MPI_Irecv(b.bottom_recieve.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[3], comm, &req[nreq++]);
         MPI_Isend(b.bottom_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[2], tags[2], comm, &req[nreq++]);
     }
     
     if (b.neighbors[3] != MPI_PROC_NULL) { // top (y+)
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                b.top_send[idx] = u[b.local_index(i, b.Ny, k)];
+                b.top_send[idx] = u[b.index(i, b.Ny, k)];
                 
-        MPI_Irecv(b.top_recv.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[2], comm, &req[nreq++]);
+        MPI_Irecv(b.top_recieve.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[2], comm, &req[nreq++]);
         MPI_Isend(b.top_send.data(), b.Nx*b.Nz, MPI_DOUBLE, b.neighbors[3], tags[3], comm, &req[nreq++]);
     }
     
@@ -76,18 +77,18 @@ void exchange_halos(Block& b, VDOUB& u, MPI_Comm comm) {
     if (b.neighbors[4] != MPI_PROC_NULL) { // front (z-)
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
-                b.front_send[idx] = u[b.local_index(i, j, 1)];
+                b.front_send[idx] = u[b.index(i, j, 1)];
                 
-        MPI_Irecv(b.front_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[5], comm, &req[nreq++]);
+        MPI_Irecv(b.front_recieve.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[5], comm, &req[nreq++]);
         MPI_Isend(b.front_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[4], tags[4], comm, &req[nreq++]);
     }
     
     if (b.neighbors[5] != MPI_PROC_NULL) { // back (z+)
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
-                b.back_send[idx] = u[b.local_index(i, j, b.Nz)];
+                b.back_send[idx] = u[b.index(i, j, b.Nz)];
                 
-        MPI_Irecv(b.back_recv.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[4], comm, &req[nreq++]);
+        MPI_Irecv(b.back_recieve.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[4], comm, &req[nreq++]);
         MPI_Isend(b.back_send.data(), b.Nx*b.Ny, MPI_DOUBLE, b.neighbors[5], tags[5], comm, &req[nreq++]);
     }
     
@@ -99,84 +100,49 @@ void exchange_halos(Block& b, VDOUB& u, MPI_Comm comm) {
     if (b.neighbors[0] != MPI_PROC_NULL) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                u[b.local_index(0, j, k)] = b.left_recv[idx];
+                u[b.index(0, j, k)] = b.left_recieve[idx];
     }
     
     if (b.neighbors[1] != MPI_PROC_NULL) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                u[b.local_index(b.Nx+1, j, k)] = b.right_recv[idx];
+                u[b.index(b.Nx+1, j, k)] = b.right_recieve[idx];
     }
     
     if (b.neighbors[2] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                u[b.local_index(i, 0, k)] = b.bottom_recv[idx];
+                u[b.index(i, 0, k)] = b.bottom_recieve[idx];
     }
     
     if (b.neighbors[3] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
-                u[b.local_index(i, b.Ny+1, k)] = b.top_recv[idx];
+                u[b.index(i, b.Ny+1, k)] = b.top_recieve[idx];
     }
     
     if (b.neighbors[4] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
-                u[b.local_index(i, j, 0)] = b.front_recv[idx];
+                u[b.index(i, j, 0)] = b.front_recieve[idx];
     }
     
     if (b.neighbors[5] != MPI_PROC_NULL) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
-                u[b.local_index(i, j, b.Nz+1)] = b.back_recv[idx];
+                u[b.index(i, j, b.Nz+1)] = b.back_recieve[idx];
     }
     
-    // SPECIAL HANDLING FOR PERIODIC BOUNDARIES AT DOMAIN EDGES
-    // This is critical for Y-direction periodicity
-    MPI_Comm comm_cart_y;
-    MPI_Comm_split(comm, 1, b.coord_y, &comm_cart_y);
-    
-    int y_size;
-    MPI_Comm_size(comm_cart_y, &y_size);
-    int y_rank;
-    MPI_Comm_rank(comm_cart_y, &y_rank);
-    
-    if (y_size > 1) {
-        if (y_rank == 0) {
-            // Bottom process in Y dimension
-            for (int i = 1; i <= b.Nx; ++i) {
-                for (int k = 1; k <= b.Nz; ++k) {
-                    // Send bottom row to top process
-                    double val = u[b.local_index(i, 1, k)];
-                    MPI_Send(&val, 1, MPI_DOUBLE, y_size-1, tags[4], comm_cart_y);
-                    // Receive top row from top process
-                    MPI_Recv(&u[b.local_index(i, 0, k)], 1, MPI_DOUBLE, y_size-1, tags[5], comm_cart_y, MPI_STATUS_IGNORE);
-                }
-            }
-        } else if (y_rank == y_size-1) {
-            // Top process in Y dimension
-            for (int i = 1; i <= b.Nx; ++i) {
-                for (int k = 1; k <= b.Nz; ++k) {
-                    // Receive bottom row from bottom process
-                    MPI_Recv(&u[b.local_index(i, b.Ny+1, k)], 1, MPI_DOUBLE, 0, tags[4], comm_cart_y, MPI_STATUS_IGNORE);
-                    // Send top row to bottom process
-                    double val = u[b.local_index(i, b.Ny, k)];
-                    MPI_Send(&val, 1, MPI_DOUBLE, 0, tags[5], comm_cart_y);
-                }
-            }
-        }
-    } else {
-        // Single process in Y dimension - just copy values
+    // SPECIAL HANDLING FOR PERIODIC BOUNDARIES in Y direction
+    if (b.neighbors[2] == MPI_PROC_NULL && b.neighbors[3] == MPI_PROC_NULL) {
+        // Single process in Y dimension - just copy values to maintain periodicity
         for (int i = 0; i <= b.Nx+1; ++i) {
             for (int k = 0; k <= b.Nz+1; ++k) {
-                u[b.local_index(i, 0, k)] = u[b.local_index(i, b.Ny, k)];
-                u[b.local_index(i, b.Ny+1, k)] = u[b.local_index(i, 1, k)];
+                u[b.index(i, 0, k)] = u[b.index(i, b.Ny, k)];
+                u[b.index(i, b.Ny+1, k)] = u[b.index(i, 1, k)];
             }
         }
     }
-    
-    MPI_Comm_free(&comm_cart_y);
 }
 
 void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u) {
@@ -184,34 +150,32 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u) {
     if (b.x_start == 0) {
         for (int j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k)
-                u[b.local_index(0, j, k)] = 0.0;
+                u[b.index(0, j, k)] = 0.0;
     }
     
     if (b.x_end == g.N) {
         for (int j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k)
-                u[b.local_index(b.Nx+1, j, k)] = 0.0;
+                u[b.index(b.Nx+1, j, k)] = 0.0;
     }
     
     // Z boundaries - Dirichlet (u=0)
     if (b.z_start == 0) {
         for (int i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j)
-                u[b.local_index(i, j, 0)] = 0.0;
+                u[b.index(i, j, 0)] = 0.0;
     }
     
     if (b.z_end == g.N) {
         for (int i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j)
-                u[b.local_index(i, j, b.Nz+1)] = 0.0;
+                u[b.index(i, j, b.Nz+1)] = 0.0;
     }
-    
-    // Y boundaries are handled by periodic conditions in exchange_halos
 }
 
 void init(const Grid& g, Block& b, VVEC& u, MPI_Comm comm, 
           double& max_inaccuracy, double& first_step_inaccuracy) {
-    // Initialize u^0 with analytical solution
+    // Initialize u^0 with analytical solution for all points
     for (int i = 0; i <= b.Nx+1; ++i) {
         int i_global = b.x_start + i - 1;
         if (i_global < 0 || i_global > g.N) continue;
@@ -227,7 +191,7 @@ void init(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
                 if (k_global < 0 || k_global > g.N) continue;
                 double z = k_global * g.h_z;
                 
-                u[0][b.local_index(i, j, k)] = u_analytical(g, x, y, z, 0.0);
+                u[0][b.index(i, j, k)] = u_analytical(g, x, y, z, 0.0);
             }
         }
     }
@@ -254,12 +218,12 @@ void init(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
                 if (i_global > 0 && i_global < g.N && 
                     j_global > 0 && j_global < g.N && 
                     k_global > 0 && k_global < g.N) {
-                    // Internal points
-                    u[1][b.local_index(i, j, k)] = u[0][b.local_index(i, j, k)]
+                    // Internal points: numerical scheme
+                    u[1][b.index(i, j, k)] = u[0][b.index(i, j, k)]
                         + 0.5 * g.a2 * g.tau * g.tau * laplace_operator(g, b, u[0], i, j, k);
                 } else {
-                    // Boundary points - use analytical solution
-                    u[1][b.local_index(i, j, k)] = u_analytical(g, x, y, z, g.tau);
+                    // Boundary points - use analytical solution for accuracy
+                    u[1][b.index(i, j, k)] = u_analytical(g, x, y, z, g.tau);
                 }
             }
         }
@@ -288,7 +252,7 @@ void init(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
                 double z = k_global * g.h_z;
                 
                 double exact = u_analytical(g, x, y, z, t);
-                double err = fabs(u[1][b.local_index(i, j, k)] - exact);
+                double err = fabs(u[1][b.index(i, j, k)] - exact);
                 if (err > local_max_err) local_max_err = err;
             }
         }
@@ -312,7 +276,7 @@ void run_algo(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
         int next = step % 3;
         double t = step * g.tau;
         
-        // Compute internal points
+        // Compute values for next step
         for (int i = 1; i <= b.Nx; ++i) {
             int i_global = b.x_start + i - 1;
             double x = i_global * g.h_x;
@@ -329,12 +293,12 @@ void run_algo(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
                         j_global > 0 && j_global < g.N && 
                         k_global > 0 && k_global < g.N) {
                         // Internal points: explicit scheme
-                        u[next][b.local_index(i, j, k)] = 2.0 * u[curr][b.local_index(i, j, k)]
-                            - u[prev][b.local_index(i, j, k)]
+                        u[next][b.index(i, j, k)] = 2.0 * u[curr][b.index(i, j, k)]
+                            - u[prev][b.index(i, j, k)]
                             + g.a2 * g.tau * g.tau * laplace_operator(g, b, u[curr], i, j, k);
                     } else {
                         // Boundary points: analytical solution
-                        u[next][b.local_index(i, j, k)] = u_analytical(g, x, y, z, t);
+                        u[next][b.index(i, j, k)] = u_analytical(g, x, y, z, t);
                     }
                 }
             }
@@ -362,7 +326,7 @@ void run_algo(const Grid& g, Block& b, VVEC& u, MPI_Comm comm,
                     double z = k_global * g.h_z;
                     
                     double exact = u_analytical(g, x, y, z, t);
-                    double err = fabs(u[next][b.local_index(i, j, k)] - exact);
+                    double err = fabs(u[next][b.index(i, j, k)] - exact);
                     if (err > local_max_err) local_max_err = err;
                 }
             }
@@ -413,6 +377,6 @@ void solve_mpi(const Grid& g, Block& b,
         for (int j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k) {
                 int idx = (i-1)*b.Ny*b.Nz + (j-1)*b.Nz + (k-1);
-                result[idx] = u[next][b.local_index(i, j, k)];
+                result[idx] = u[next][b.index(i, j, k)];
             }
 }
