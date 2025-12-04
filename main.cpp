@@ -1,3 +1,4 @@
+<<<main.cpp>>>
 #define _USE_MATH_DEFINES
 #include "equation.hpp"
 #include <iostream>
@@ -14,45 +15,6 @@ double parse_length(const string& arg, string& label_part) {
     } else {
         label_part = arg;
         return stod(arg);
-    }
-}
-
-void choose_dims(int np, int dims[3]) {
-    // Находим оптимальное разбиение для блочной декомпозиции
-    dims[0] = dims[1] = dims[2] = 1;
-    
-    // Пытаемся найти максимально кубическое разбиение
-    for (int i = 1; i * i * i <= np; ++i) {
-        if (np % (i * i * i) == 0) {
-            dims[0] = dims[1] = dims[2] = i;
-        } else if (np % (i * i) == 0) {
-            dims[0] = dims[1] = i;
-            dims[2] = np / (i * i);
-        }
-    }
-    
-    // Если не нашли подходящего разбиения, используем наиболее сбалансированное
-    if (dims[0] * dims[1] * dims[2] != np) {
-        dims[0] = 1;
-        dims[1] = 1;
-        dims[2] = np;
-        
-        // Ищем более сбалансированное разбиение
-        for (int i = 1; i <= np; ++i) {
-            if (np % i != 0) continue;
-            int rest = np / i;
-            for (int j = 1; j <= rest; ++j) {
-                if (rest % j != 0) continue;
-                int k = rest / j;
-                // Выбираем наиболее сбалансированное разбиение
-                if (abs(i - j) + abs(j - k) + abs(k - i) < 
-                    abs(dims[0] - dims[1]) + abs(dims[1] - dims[2]) + abs(dims[2] - dims[0])) {
-                    dims[0] = i;
-                    dims[1] = j;
-                    dims[2] = k;
-                }
-            }
-        }
     }
 }
 
@@ -93,11 +55,11 @@ int main(int argc, char* argv[]) {
              << "  Domain label = " << grid.domain_label << endl;
     }
     
-    // Оптимальное разбиение для блочной декомпозиции
-    int dims[3];
-    choose_dims(np, dims);
+    // Автоматическое создание сбалансированной топологии с помощью MPI_Dims_create
+    int dims[3] = {0, 0, 0};
+    MPI_Dims_create(np, 3, dims);
     
-    // Периодичность: только по оси y (индекс 1)
+    // Периодичность: только по оси y (индекс 1) для варианта 3
     int periods[3] = {0, 1, 0};
     
     if (rank == 0) {
