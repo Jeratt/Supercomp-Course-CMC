@@ -1,15 +1,14 @@
 #ifndef EQUATION_HPP
 #define EQUATION_HPP
-#include <iostream>
-#include <vector>
+
 #include <cmath>
-#include <string>
+#include <vector>
+#include <iostream>
 #include <mpi.h>
 
-// Используем константу из задания 3
-#define T 20  // 20 временных шагов
+#define TIME_STEPS 20
 
-typedef std::vector<std::vector<double>> VDOUB2D; // Используем VDOUB2D как в OMP решении
+typedef std::vector<std::vector<double>> VVEC;
 typedef std::vector<double> VDOUB;
 typedef std::vector<int> VINT;
 
@@ -17,102 +16,105 @@ class Grid {
 public:
     int N;
     double Lx, Ly, Lz, h_x, h_y, h_z, a2, tau;
-    std::string domain_label; // Не используется в MPI, но добавлено для совместимости
+    std::string domain_label;
 
     Grid(int N, double Lx, double Ly, double Lz, const std::string& label)
         : N(N), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label) {
         h_x = Lx / N;
         h_y = Ly / N;
         h_z = Lz / N;
-        // Для варианта 3: a2 = 0.25
         a2 = 0.25;
-        // Примерная безопасная константа для N от 128 до 512:
-        tau = 0.00005;  // уменьшено вдвое по сравнению с 0.0001
+        tau = 0.0001;
     }
 
-    inline int index(int i, int j, int k) const {
+    inline int global_index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
 
 class Block {
 public:
-    int N, Nx, Ny, Nz, padded_Nx, padded_Ny, padded_Nz, x_start, y_start, z_start, x_end, y_end, z_end, rank, dim0_rank, dim1_rank, dim2_rank;
+    int Nx, Ny, Nz;
+    int padded_Nx, padded_Ny, padded_Nz;
+    int x_start, x_end, y_start, y_end, z_start, z_end;
+    int rank, coord_x, coord_y, coord_z;
     VINT neighbors;
-    VDOUB left_send, right_send, bottom_send, top_send, front_send, back_send;
-    VDOUB left_recieve, right_recieve, bottom_recieve, top_recieve, front_recieve, back_recieve;
+    VDOUB left_send,  right_send,
+           bottom_send, top_send,
+           front_send,  back_send;
 
-    Block(const Grid& g, VINT& neighbors, int coords[], const int& dim0_n, const int& dim1_n, const int& dim2_n, int& rank) {
-        this->rank = rank;
-        this->dim0_rank = coords[0];
-        this->dim1_rank = coords[1];
-        this->dim2_rank = coords[2];
-        int base_size_x = (g.N + 1) / dim1_n;
-        int remainder_x = (g.N + 1) % dim1_n;
-        int base_size_y = (g.N + 1) / dim0_n;
-        int remainder_y = (g.N + 1) % dim0_n;
-        int base_size_z = (g.N + 1) / dim2_n;
-        int remainder_z = (g.N + 1) % dim2_n;
+    VDOUB left_recv,  right_recv,
+           bottom_recv, top_recv,
+           front_recv,  back_recv;
 
-        // local block sizes by each dim
-        this->Nx = (this->dim1_rank < dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
-        this->Ny = (this->dim0_rank < remainder_y) ? (base_size_y + 1) : base_size_y;
-        this->Nz = (this->dim2_rank < remainder_z) ? (base_size_z + 1) : base_size_z;
+    Block(const Grid& g, const VINT& neighbors, const int coords[3], int dimx,
+          int dimy, int dimz, int rank) : 
+        rank(rank), 
+        coord_x(coords[0]),
+        coord_y(coords[1]), 
+        coord_z(coords[2]), 
+        neighbors(neighbors)
+    {
+        int base_x = (g.N + 1) / dimx;
+        int rem_x  = (g.N + 1) % dimx;
+        int base_y = (g.N + 1) / dimy;
+        int rem_y  = (g.N + 1) % dimy;
+        int base_z = (g.N + 1) / dimz;
+        int rem_z  = (g.N + 1) % dimz;
 
-        // make fixed length vectors for data transmission between processes
-        this->left_send.resize(this->Nx * this->Nz);
-        this->left_recieve.resize(this->Nx * this->Nz);
-        this->right_send.resize(this->Nx * this->Nz);
-        this->right_recieve.resize(this->Nx * this->Nz);
-        this->bottom_send.resize(this->Ny * this->Nz);
-        this->bottom_recieve.resize(this->Ny * this->Nz);
-        this->top_send.resize(this->Ny * this->Nz);
-        this->top_recieve.resize(this->Ny * this->Nz);
-        this->front_send.resize(this->Nx * this->Ny);
-        this->front_recieve.resize(this->Nx * this->Ny);
-        this->back_send.resize(this->Nx * this->Ny);
-        this->back_recieve.resize(this->Nx * this->Ny);
+        Nx = (coord_x < dimx - rem_x) ? base_x : base_x + 1;
+        Ny = (coord_y < dimy - rem_y) ? base_y : base_y + 1;
+        Nz = (coord_z < dimz - rem_z) ? base_z : base_z + 1;
 
-        // global grid start and end indices
-        this->x_end = g.N;
-        this->y_start = 0;
-        this->z_start = 0;
-        for (int i = dim1_rank; i > 0; --i)
-            this->x_end -= (i <= dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
-        this->x_start = this->x_end - this->Nx + 1;
-        for (int i = 0; i < dim0_rank; ++i)
-            this->y_start += (i < remainder_y) ? (base_size_y + 1) : base_size_y;
-        this->y_end = this->y_start + this->Ny - 1;
-        for (int i = 0; i < dim2_rank; ++i)
-            this->z_start += (i < remainder_z) ? (base_size_z + 1) : base_size_z;
-        this->z_end = this->z_start + this->Nz - 1;
+        x_start = 0;
+        for (int i = 0; i < coord_x; ++i)
+            x_start += (i < dimx - rem_x) ? base_x : base_x + 1;
+        x_end = x_start + Nx - 1;
 
-        // +2 for ghost layers (halo)
-        this->padded_Nx = this->Nx + 2;
-        this->padded_Ny = this->Ny + 2;
-        this->padded_Nz = this->Nz + 2;
-        this->N = this->padded_Nx * this->padded_Ny * this->padded_Nz;
-        this->neighbors = neighbors;
+        y_start = 0;
+        for (int i = 0; i < coord_y; ++i)
+            y_start += (i < dimy - rem_y) ? base_y : base_y + 1;
+        y_end = y_start + Ny - 1;
+
+        z_start = 0;
+        for (int i = 0; i < coord_z; ++i)
+            z_start += (i < dimz - rem_z) ? base_z : base_z + 1;
+        z_end = z_start + Nz - 1;
+
+        padded_Nx = Nx + 2;
+        padded_Ny = Ny + 2;
+        padded_Nz = Nz + 2;
+
+        left_send.resize(Ny * Nz);   right_send.resize(Ny * Nz);
+        left_recv.resize(Ny * Nz);   right_recv.resize(Ny * Nz);
+
+        bottom_send.resize(Nx * Nz); top_send.resize(Nx * Nz);
+        bottom_recv.resize(Nx * Nz); top_recv.resize(Nx * Nz);
+
+        front_send.resize(Nx * Ny);  back_send.resize(Nx * Ny);
+        front_recv.resize(Nx * Ny);  back_recv.resize(Nx * Ny);
     }
 
-    inline int index(const int& i, const int& j, const int& k) const {
-        return i * (this->padded_Ny * this->padded_Nz) + j * this->padded_Nz + k;
+    inline int local_index(int i, int j, int k) const {
+        return i * (padded_Ny * padded_Nz) + j * padded_Nz + k;
     }
-
-    // void print_block_info() const {
-    //     std::cout << "Block " << this->rank << " cooord ("<< this->dim0_rank << "," << this->dim1_rank << "," << this->dim2_rank << ") info:\n\t" <<
-    //         "Nx = " << this->Nx << "\n\t\t" << "x_start = " << this->x_start << "\n\t\t" << "x_end = " << this->x_end << "\n\t" <<
-    //             "Ny = " << this->Ny << "\n\t\t" << "y_start = " << this->y_start << "\n\t\t" << "y_end = " << this->y_end << "\n\t" <<
-    //                 "Nz = " << this->Nz << "\n\t\t" << "z_start = " << this->z_start << "\n\t\t" << "z_end = " << this->z_end << "\n\t" <<  std::endl;
-    // }
 };
 
-// u_analytical variant 8 (пока оставляем как есть, будет адаптировано позже)
-inline double u_analytical(const Grid& g, const double& x, const double& y, const double& z, const double& t) {
-    return sin((2 * M_PI * x) / g.Lx) * sin((4 * M_PI * y) / g.Ly) * sin((6 * M_PI * z) / g.Lz) *
-           cos(M_PI * sqrt((4 / pow(g.Lx, 2)) + (16 / pow(g.Ly, 2)) + (36 / pow(g.Lz, 2))) * t);
+inline double u_analytical(const Grid& g, double x, double y, double z, double t) {
+    double at = (M_PI / 2.0) * std::sqrt(1.0/(g.Lx*g.Lx) + 4.0/(g.Ly*g.Ly) + 9.0/(g.Lz*g.Lz));
+    return std::sin(M_PI * x / g.Lx) *
+           std::sin(2.0 * M_PI * y / g.Ly) *
+           std::sin(3.0 * M_PI * z / g.Lz) *
+           std::cos(at * t);
 }
 
-void solve_equation(const Grid& grid, Block& block, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result);
+void solve_mpi(const Grid& grid, Block& block,
+               int dimx, int dimy, int dimz,
+               MPI_Comm comm_cart,
+               double& time,
+               double& max_inaccuracy,
+               double& first_step_inaccuracy,
+               double& last_step_inaccuracy,
+               VDOUB& result);
 
-#endif //EQUATION_HPP
+#endif
