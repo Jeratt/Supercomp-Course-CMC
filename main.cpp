@@ -1,5 +1,5 @@
 #define _USE_MATH_DEFINES
-#include "equation.hpp"
+#include "equation.hpp" // Убедитесь, что подключаете вашу версию
 #include <iostream>
 #include <fstream>
 #include <cstring>
@@ -39,21 +39,26 @@ int main(int argc, char* argv[]) {
     double Ly = parse_length(argv[3]);
     double Lz = parse_length(argv[4]);
     
-    // Create L_type string for labeling
-    const char* L_type;
-    if (strcmp(argv[2], "pi") == 0 && strcmp(argv[3], "pi") == 0 && strcmp(argv[4], "pi") == 0)
-        L_type = "pi";
-    else
-        L_type = "custom";
+    // Создаем метки для L_type (аналогично вашей OMP версии)
+    std::string lx_label, ly_label, lz_label;
+    const char* arg_lx = argv[2];
+    const char* arg_ly = argv[3];
+    const char* arg_lz = argv[4];
     
-    Grid grid = Grid(N, const_cast<char*>(L_type), Lx, Ly, Lz);
+    if (strcmp(arg_lx, "pi") == 0) lx_label = "pi"; else lx_label = std::string(arg_lx);
+    if (strcmp(arg_ly, "pi") == 0) ly_label = "pi"; else ly_label = std::string(arg_ly);
+    if (strcmp(arg_lz, "pi") == 0) lz_label = "pi"; else lz_label = std::string(arg_lz);
+    
+    // Grid grid = Grid(N, const_cast<char*>(L_type), Lx, Ly, Lz); // Старый вызов
+    Grid grid = Grid(N, Lx, Ly, Lz, lx_label, ly_label, lz_label); // Новый вызов
 
     if (rank == 0)
         std::cout << "Input values:\n\tN = " << grid.N << "\n\tProcesses = " << proc_num 
-                  << "\n\tL_type = " << grid.L_type << "\n\tLx = " << grid.Lx 
+                  //<< "\n\tL_type = " << grid.L_type << "\n\tLx = " << grid.Lx // Старый вывод
+                  << "\n\tDomain label = " << grid.domain_label << "\n\tLx = " << grid.Lx // Новый вывод
                   << "\n\tLy = " << grid.Ly << "\n\tLz = " << grid.Lz << std::endl;
 
-    // Create cartesian topology
+    // Создание топологии
     int dims[3] = {0, 0, 0};
     MPI_Dims_create(proc_num, 3, dims);
     

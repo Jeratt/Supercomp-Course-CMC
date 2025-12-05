@@ -5,6 +5,7 @@
 #include <vector>
 #include <cmath>
 #include <mpi.h>
+#include <algorithm> // Для std::min/max
 
 #define TIME_STEPS 20
 
@@ -26,7 +27,10 @@ class Grid {
         h_z = Lz / N;
         a2 = 0.25;  // a^2 = 1/4 for variant 3
         // Примерная настройка tau для устойчивости
-        double min_h = std::min({h_x, h_y, h_z});
+        // double min_h = std::min({h_x, h_y, h_z}); // Не поддерживается в g++ 4.8.2 без C++11
+        // Используем совместимый способ для нахождения минимума из трех
+        double temp_min = std::min(h_x, h_y);
+        double min_h = std::min(temp_min, h_z);
         tau = 0.5 * min_h / (std::sqrt(a2 * 3)); // Примерный расчет, может потребоваться корректировка
     }
 
