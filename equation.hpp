@@ -27,11 +27,11 @@ class Grid {
         h_z = Lz / N;
         a2 = 0.25;  // a^2 = 1/4 for variant 3
         // Примерная настройка tau для устойчивости
-        // double min_h = std::min({h_x, h_y, h_z}); // Не поддерживается в g++ 4.8.2 без C++11
-        // Используем совместимый способ для нахождения минимума из трех
         double temp_min = std::min(h_x, h_y);
         double min_h = std::min(temp_min, h_z);
-        tau = 0.5 * min_h / (std::sqrt(a2 * 3)); // Примерный расчет, может потребоваться корректировка
+        // Условие устойчивости: tau <= min_h / (sqrt(3) * sqrt(a2))
+        // sqrt(a2) = 0.5, sqrt(3) ~ 1.732
+        tau = 0.9 * min_h / (1.732 * 0.5); // 0.9 - немного меньше 1 для надежности
     }
 
     inline int index(const int& i, const int& j, const int& k) const {
@@ -47,7 +47,7 @@ class Block {
     int padded_Nx, padded_Ny, padded_Nz; // Размеры сетки с ghost-слоями
     int x_start, y_start, z_start, x_end, y_end, z_end; // Индексы начала и конца локальной области во ВСЕЙ (глобальной) сетке (включая границы)
     int rank, dim0_rank, dim1_rank, dim2_rank;
-    VINT neighbors; // 6 соседей + 2 для хранения ghost-размеров, если нужно (не используется напрямую)
+    VINT neighbors; // 6 соседей
 
     // Ghost слои для обмена
     VDOUB send_x_low, send_x_high, recv_x_low, recv_x_high;
@@ -62,7 +62,6 @@ class Block {
         this->neighbors = neighbors; // Копируем 6 соседей
 
         // --- Расчет локального размера и глобальных индексов ---
-        // Используем тот же алгоритм разбиения, что и в оригинальном решении
         int base_size_x = (g.N + 1) / dim1_n;
         int remainder_x = (g.N + 1) % dim1_n;
         int base_size_y = (g.N + 1) / dim0_n;
@@ -75,19 +74,19 @@ class Block {
         this->local_Nz = (this->dim2_rank < remainder_z) ? (base_size_z + 1) : base_size_z;
 
         // Глобальные индексы начала и конца локальной области
-        this->x_end = g.N; // начинаем с конца
+        this->x_end = g.N;
         for (int i = dim1_rank; i > 0; --i) {
             this->x_end -= (i <= dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
         }
         this->x_start = this->x_end - this->local_Nx + 1;
 
-        this->y_start = 0; // начинаем с начала
+        this->y_start = 0;
         for (int i = 0; i < dim0_rank; ++i) {
             this->y_start += (i < remainder_y) ? (base_size_y + 1) : base_size_y;
         }
         this->y_end = this->y_start + this->local_Ny - 1;
 
-        this->z_start = 0; // начинаем с начала
+        this->z_start = 0;
         for (int i = 0; i < dim2_rank; ++i) {
             this->z_start += (i < remainder_z) ? (base_size_z + 1) : base_size_z;
         }
@@ -97,22 +96,19 @@ class Block {
         this->padded_Nx = this->local_Nx + 2;
         this->padded_Ny = this->local_Ny + 2;
         this->padded_Nz = this->local_Nz + 2;
-        this->N = this->padded_Nx * this->padded_Ny * this->padded_Nz; // Размер вектора с ghost-ячейками
+        this->N = this->padded_Nx * this->padded_Ny * this->padded_Nz;
 
         // --- Буферы для обмена ---
-        // X-направление
         this->send_x_low.resize(this->local_Ny * this->local_Nz);
         this->send_x_high.resize(this->local_Ny * this->local_Nz);
         this->recv_x_low.resize(this->local_Ny * this->local_Nz);
         this->recv_x_high.resize(this->local_Ny * this->local_Nz);
 
-        // Y-направление
         this->send_y_low.resize(this->local_Nx * this->local_Nz);
         this->send_y_high.resize(this->local_Nx * this->local_Nz);
         this->recv_y_low.resize(this->local_Nx * this->local_Nz);
         this->recv_y_high.resize(this->local_Nx * this->local_Nz);
 
-        // Z-направление
         this->send_z_low.resize(this->local_Nx * this->local_Ny);
         this->send_z_high.resize(this->local_Nx * this->local_Ny);
         this->recv_z_low.resize(this->local_Nx * this->local_Ny);
@@ -120,35 +116,23 @@ class Block {
     }
 
     inline int padded_index(const int& i_padded, const int& j_padded, const int& k_padded) const {
-        // Индекс в локальном векторе с ghost-слоями
-        // i_padded, j_padded, k_padded от 0 до padded_Nx/y/z-1
-        // Соответствует локальным индексам от -1 до local_Nx/y/z
         if (i_padded < 0 || i_padded >= padded_Nx || j_padded < 0 || j_padded >= padded_Ny || k_padded < 0 || k_padded >= padded_Nz) {
-            // std::cerr << "Warning: Accessing out-of-bounds padded index (" << i_padded << ", " << j_padded << ", " << k_padded << ") on rank " << rank << std::endl;
-            // Возвращаем индекс на границе, например, 0,0,0 ghost
-            return 0;
+            return 0; // Или бросить исключение
         }
         return i_padded * (padded_Ny * padded_Nz) + j_padded * padded_Nz + k_padded;
     }
 
     inline int local_index(const int& i_local, const int& j_local, const int& k_local) const {
-        // Преобразует локальный индекс (от 0 до local_Nx/y/z-1) в индекс ghost-сетки (от 1 до local_Nx/y/z)
-        // Используется для доступа к внутренним точкам в padded сетке
         return padded_index(i_local + 1, j_local + 1, k_local + 1);
     }
 
     inline int global_index(const int& i_global, const int& j_global, const int& k_global) const {
-        // Используется для вычисления аналитического решения в глобальных координатах
-        // Проверяем, принадлежит ли точка локальному блоку
         if (i_global >= x_start && i_global <= x_end && j_global >= y_start && j_global <= y_end && k_global >= z_start && k_global <= z_end) {
-             // Преобразуем глобальный индекс в локальный индекс (от 0 до local_N-1)
              int local_i = i_global - x_start;
              int local_j = j_global - y_start;
              int local_k = k_global - z_start;
-             // Преобразуем локальный индекс в индекс padded сетки
              return padded_index(local_i + 1, local_j + 1, local_k + 1);
         }
-        // Если точка не принадлежит блоку, возвращаем -1 или бросаем исключение
         return -1;
     }
 

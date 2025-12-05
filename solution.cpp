@@ -1,5 +1,5 @@
 #define _USE_MATH_DEFINES
-#include "equation.hpp"
+#include "equation.h"
 #include <algorithm>
 #include <iostream>
 #include <chrono>
@@ -12,13 +12,11 @@ void exchange_ghost_layers(Block& b, VDOUB& ui_padded, const MPI_Comm& comm_cart
     int req_count = 0;
 
     // --- Обмен по X ---
-    // Отправить влево (low), получить справа (high)
     if (b.neighbors[0] != MPI_PROC_NULL) { // Есть сосед слева
         int data_size = b.local_Ny * b.local_Nz;
         MPI_Isend(b.send_x_low.data(), data_size, MPI_DOUBLE, b.neighbors[0], b.rank * 6 + 0, comm_cart, &reqs[req_count++]);
         MPI_Irecv(b.recv_x_low.data(), data_size, MPI_DOUBLE, b.neighbors[0], b.neighbors[0] * 6 + 1, comm_cart, &reqs[req_count++]);
     }
-    // Отправить вправо (high), получить слева (low)
     if (b.neighbors[1] != MPI_PROC_NULL) { // Есть сосед справа
         int data_size = b.local_Ny * b.local_Nz;
         MPI_Isend(b.send_x_high.data(), data_size, MPI_DOUBLE, b.neighbors[1], b.rank * 6 + 1, comm_cart, &reqs[req_count++]);
@@ -26,13 +24,11 @@ void exchange_ghost_layers(Block& b, VDOUB& ui_padded, const MPI_Comm& comm_cart
     }
 
     // --- Обмен по Y ---
-    // Отправить вниз (low), получить сверху (high)
     if (b.neighbors[2] != MPI_PROC_NULL) {
         int data_size = b.local_Nx * b.local_Nz;
         MPI_Isend(b.send_y_low.data(), data_size, MPI_DOUBLE, b.neighbors[2], b.rank * 6 + 2, comm_cart, &reqs[req_count++]);
         MPI_Irecv(b.recv_y_low.data(), data_size, MPI_DOUBLE, b.neighbors[2], b.neighbors[2] * 6 + 3, comm_cart, &reqs[req_count++]);
     }
-    // Отправить вверх (high), получить снизу (low)
     if (b.neighbors[3] != MPI_PROC_NULL) {
         int data_size = b.local_Nx * b.local_Nz;
         MPI_Isend(b.send_y_high.data(), data_size, MPI_DOUBLE, b.neighbors[3], b.rank * 6 + 3, comm_cart, &reqs[req_count++]);
@@ -40,13 +36,11 @@ void exchange_ghost_layers(Block& b, VDOUB& ui_padded, const MPI_Comm& comm_cart
     }
 
     // --- Обмен по Z ---
-    // Отправить ближе (low), получить дальше (high)
     if (b.neighbors[4] != MPI_PROC_NULL) {
         int data_size = b.local_Nx * b.local_Ny;
         MPI_Isend(b.send_z_low.data(), data_size, MPI_DOUBLE, b.neighbors[4], b.rank * 6 + 4, comm_cart, &reqs[req_count++]);
         MPI_Irecv(b.recv_z_low.data(), data_size, MPI_DOUBLE, b.neighbors[4], b.neighbors[4] * 6 + 5, comm_cart, &reqs[req_count++]);
     }
-    // Отправить дальше (high), получить ближе (low)
     if (b.neighbors[5] != MPI_PROC_NULL) {
         int data_size = b.local_Nx * b.local_Ny;
         MPI_Isend(b.send_z_high.data(), data_size, MPI_DOUBLE, b.neighbors[5], b.rank * 6 + 5, comm_cart, &reqs[req_count++]);
@@ -111,18 +105,18 @@ void exchange_ghost_layers(Block& b, VDOUB& ui_padded, const MPI_Comm& comm_cart
 
 // --- Заполнение буферов для отправки ---
 void fill_send_buffers(Block& b, const VDOUB& ui_padded) {
-    // X-направление
+    // X-направление: заполняем из внутренних точек, прилегающих к границе
     if (b.neighbors[0] != MPI_PROC_NULL) { // Отправляем влево (low)
         for (int j = 0; j < b.local_Ny; ++j) {
             for (int k = 0; k < b.local_Nz; ++k) {
-                b.send_x_low[j * b.local_Nz + k] = ui_padded[b.padded_index(1, j + 1, k + 1)]; // Значение из i=1 (ghost i=0)
+                b.send_x_low[j * b.local_Nz + k] = ui_padded[b.local_index(0, j, k)]; // i=0 в local -> i=1 в padded
             }
         }
     }
     if (b.neighbors[1] != MPI_PROC_NULL) { // Отправляем вправо (high)
         for (int j = 0; j < b.local_Ny; ++j) {
             for (int k = 0; k < b.local_Nz; ++k) {
-                b.send_x_high[j * b.local_Nz + k] = ui_padded[b.padded_index(b.padded_Nx - 2, j + 1, k + 1)]; // Значение из i=Nx (ghost i=Nx+1)
+                b.send_x_high[j * b.local_Nz + k] = ui_padded[b.local_index(b.local_Nx - 1, j, k)]; // i=local_Nx-1 в local -> i=local_Nx в padded
             }
         }
     }
@@ -131,14 +125,14 @@ void fill_send_buffers(Block& b, const VDOUB& ui_padded) {
     if (b.neighbors[2] != MPI_PROC_NULL) { // Отправляем вниз (low)
         for (int i = 0; i < b.local_Nx; ++i) {
             for (int k = 0; k < b.local_Nz; ++k) {
-                b.send_y_low[i * b.local_Nz + k] = ui_padded[b.padded_index(i + 1, 1, k + 1)]; // Значение из j=1 (ghost j=0)
+                b.send_y_low[i * b.local_Nz + k] = ui_padded[b.local_index(i, 0, k)]; // j=0 в local -> j=1 в padded
             }
         }
     }
     if (b.neighbors[3] != MPI_PROC_NULL) { // Отправляем вверх (high)
         for (int i = 0; i < b.local_Nx; ++i) {
             for (int k = 0; k < b.local_Nz; ++k) {
-                b.send_y_high[i * b.local_Nz + k] = ui_padded[b.padded_index(i + 1, b.padded_Ny - 2, k + 1)]; // Значение из j=Ny (ghost j=Ny+1)
+                b.send_y_high[i * b.local_Nz + k] = ui_padded[b.local_index(i, b.local_Ny - 1, k)]; // j=local_Ny-1 в local -> j=local_Ny в padded
             }
         }
     }
@@ -147,14 +141,14 @@ void fill_send_buffers(Block& b, const VDOUB& ui_padded) {
     if (b.neighbors[4] != MPI_PROC_NULL) { // Отправляем ближе (low)
         for (int i = 0; i < b.local_Nx; ++i) {
             for (int j = 0; j < b.local_Ny; ++j) {
-                b.send_z_low[i * b.local_Ny + j] = ui_padded[b.padded_index(i + 1, j + 1, 1)]; // Значение из k=1 (ghost k=0)
+                b.send_z_low[i * b.local_Ny + j] = ui_padded[b.local_index(i, j, 0)]; // k=0 в local -> k=1 в padded
             }
         }
     }
     if (b.neighbors[5] != MPI_PROC_NULL) { // Отправляем дальше (high)
         for (int i = 0; i < b.local_Nx; ++i) {
             for (int j = 0; j < b.local_Ny; ++j) {
-                b.send_z_high[i * b.local_Ny + j] = ui_padded[b.padded_index(i + 1, j + 1, b.padded_Nz - 2)]; // Значение из k=Nz (ghost k=Nz+1)
+                b.send_z_high[i * b.local_Ny + j] = ui_padded[b.local_index(i, j, b.local_Nz - 1)]; // k=local_Nz-1 в local -> k=local_Nz в padded
             }
         }
     }
@@ -168,16 +162,11 @@ inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& ui_pa
     int j_pad = j_local + 1;
     int k_pad = k_local + 1;
 
-    // x-направление: граничные условия 1-го рода
-    // Используем значения из ghost-слоев, которые заполнены либо из соседа, либо аналитически
+    // x-направление: граничные условия 1-го рода (обрабатываются отдельно, внутри лапласа используем ghost)
     double d2x = (ui_padded[b.padded_index(i_pad - 1, j_pad, k_pad)] - 2.0 * ui_padded[b.padded_index(i_pad, j_pad, k_pad)] + ui_padded[b.padded_index(i_pad + 1, j_pad, k_pad)]) / (g.h_x * g.h_x);
 
-    // y-направление: периодические условия
-    // Используем индексы padded сетки, ghost-слои должны обеспечивать периодичность
-    int j_prev_pad = j_pad - 1;
-    int j_next_pad = j_pad + 1;
-    // В ghost-слое уже должны быть правильные значения для периодичности
-    double d2y = (ui_padded[b.padded_index(i_pad, j_prev_pad, k_pad)] - 2.0 * ui_padded[b.padded_index(i_pad, j_pad, k_pad)] + ui_padded[b.padded_index(i_pad, j_next_pad, k_pad)]) / (g.h_y * g.h_y);
+    // y-направление: периодические условия (обрабатываются через ghost или принудительно в цикле)
+    double d2y = (ui_padded[b.padded_index(i_pad, j_pad - 1, k_pad)] - 2.0 * ui_padded[b.padded_index(i_pad, j_pad, k_pad)] + ui_padded[b.padded_index(i_pad, j_pad + 1, k_pad)]) / (g.h_y * g.h_y);
 
     // z-направление: граничные условия 1-го рода
     double d2z = (ui_padded[b.padded_index(i_pad, j_pad, k_pad - 1)] - 2.0 * ui_padded[b.padded_index(i_pad, j_pad, k_pad)] + ui_padded[b.padded_index(i_pad, j_pad, k_pad + 1)]) / (g.h_z * g.h_z);
@@ -204,30 +193,42 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
     }
 
     // --- Заполнение ghost-слоев u^0 по аналитическому решению или соседям ---
-    // Внутренние границы блока
-    if (b.neighbors[0] == MPI_PROC_NULL) { // На глобальной границе X=0
+    // Глобальные границы x и z (1-го рода) -> устанавливаем 0.0 или аналитическое значение в ghost
+    // Это делается *до* обмена, чтобы ghost-значения на глобальных границах были корректны
+    if (b.neighbors[0] == MPI_PROC_NULL) { // Глобальная граница X=0
         for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                 int global_j = b.y_start + j_loc;
-                 int global_k = b.z_start + k_loc;
-                 double y = global_j * g.h_y;
-                 double z = global_k * g.h_z;
+                 // Ghost индекс (i_pad = 0)
                  u_padded[0][b.padded_index(0, j_loc + 1, k_loc + 1)] = 0.0; // u=0 на x=0
             }
         }
     }
-    if (b.neighbors[1] == MPI_PROC_NULL) { // На глобальной границе X=Lx
+    if (b.neighbors[1] == MPI_PROC_NULL) { // Глобальная граница X=Lx
         for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                 int global_j = b.y_start + j_loc;
-                 int global_k = b.z_start + k_loc;
-                 double y = global_j * g.h_y;
-                 double z = global_k * g.h_z;
+                 // Ghost индекс (i_pad = padded_Nx - 1)
                  u_padded[0][b.padded_index(b.padded_Nx - 1, j_loc + 1, k_loc + 1)] = 0.0; // u=0 на x=Lx
             }
         }
     }
-    if (b.neighbors[2] == MPI_PROC_NULL) { // На глобальной границе Y=0
+    if (b.neighbors[4] == MPI_PROC_NULL) { // Глобальная граница Z=0
+        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
+            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
+                 // Ghost индекс (k_pad = 0)
+                 u_padded[0][b.padded_index(i_loc + 1, j_loc + 1, 0)] = 0.0; // u=0 на z=0
+            }
+        }
+    }
+    if (b.neighbors[5] == MPI_PROC_NULL) { // Глобальная граница Z=Lz
+        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
+            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
+                 // Ghost индекс (k_pad = padded_Nz - 1)
+                 u_padded[0][b.padded_index(i_loc + 1, j_loc + 1, b.padded_Nz - 1)] = 0.0; // u=0 на z=Lz
+            }
+        }
+    }
+    // Глобальные границы y (периодические) -> заполняются аналитически или будут обновлены через периодичность
+    if (b.neighbors[2] == MPI_PROC_NULL) { // Глобальная граница Y=0
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
                  int global_i = b.x_start + i_loc;
@@ -238,7 +239,7 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
             }
         }
     }
-    if (b.neighbors[3] == MPI_PROC_NULL) { // На глобальной границе Y=Ly
+    if (b.neighbors[3] == MPI_PROC_NULL) { // Глобальная граница Y=Ly
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
                  int global_i = b.x_start + i_loc;
@@ -246,28 +247,6 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
                  double x = global_i * g.h_x;
                  double z = global_k * g.h_z;
                  u_padded[0][b.padded_index(i_loc + 1, b.padded_Ny - 1, k_loc + 1)] = u_analytical(g, x, g.Ly, z, 0.0);
-            }
-        }
-    }
-    if (b.neighbors[4] == MPI_PROC_NULL) { // На глобальной границе Z=0
-        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
-            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                 int global_i = b.x_start + i_loc;
-                 int global_j = b.y_start + j_loc;
-                 double x = global_i * g.h_x;
-                 double y = global_j * g.h_y;
-                 u_padded[0][b.padded_index(i_loc + 1, j_loc + 1, 0)] = 0.0; // u=0 на z=0
-            }
-        }
-    }
-    if (b.neighbors[5] == MPI_PROC_NULL) { // На глобальной границе Z=Lz
-        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
-            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                 int global_i = b.x_start + i_loc;
-                 int global_j = b.y_start + j_loc;
-                 double x = global_i * g.h_x;
-                 double y = global_j * g.h_y;
-                 u_padded[0][b.padded_index(i_loc + 1, j_loc + 1, b.padded_Nz - 1)] = 0.0; // u=0 на z=Lz
             }
         }
     }
@@ -311,30 +290,35 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
     }
 
     // --- Заполнение ghost-слоев u^1 по аналитическому решению или соседям ---
-    // (Аналогично u^0)
-    if (b.neighbors[0] == MPI_PROC_NULL) { // На глобальной границе X=0
+    if (b.neighbors[0] == MPI_PROC_NULL) { // Глобальная граница X=0
         for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                 int global_j = b.y_start + j_loc;
-                 int global_k = b.z_start + k_loc;
-                 double y = global_j * g.h_y;
-                 double z = global_k * g.h_z;
-                 u_padded[1][b.padded_index(0, j_loc + 1, k_loc + 1)] = 0.0; // u=0 на x=0
+                 u_padded[1][b.padded_index(0, j_loc + 1, k_loc + 1)] = 0.0;
             }
         }
     }
-    if (b.neighbors[1] == MPI_PROC_NULL) { // На глобальной границе X=Lx
+    if (b.neighbors[1] == MPI_PROC_NULL) { // Глобальная граница X=Lx
         for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                 int global_j = b.y_start + j_loc;
-                 int global_k = b.z_start + k_loc;
-                 double y = global_j * g.h_y;
-                 double z = global_k * g.h_z;
-                 u_padded[1][b.padded_index(b.padded_Nx - 1, j_loc + 1, k_loc + 1)] = 0.0; // u=0 на x=Lx
+                 u_padded[1][b.padded_index(b.padded_Nx - 1, j_loc + 1, k_loc + 1)] = 0.0;
             }
         }
     }
-    if (b.neighbors[2] == MPI_PROC_NULL) { // На глобальной границе Y=0
+    if (b.neighbors[4] == MPI_PROC_NULL) { // Глобальная граница Z=0
+        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
+            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
+                 u_padded[1][b.padded_index(i_loc + 1, j_loc + 1, 0)] = 0.0;
+            }
+        }
+    }
+    if (b.neighbors[5] == MPI_PROC_NULL) { // Глобальная граница Z=Lz
+        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
+            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
+                 u_padded[1][b.padded_index(i_loc + 1, j_loc + 1, b.padded_Nz - 1)] = 0.0;
+            }
+        }
+    }
+    if (b.neighbors[2] == MPI_PROC_NULL) { // Глобальная граница Y=0
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
                  int global_i = b.x_start + i_loc;
@@ -345,7 +329,7 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
             }
         }
     }
-    if (b.neighbors[3] == MPI_PROC_NULL) { // На глобальной границе Y=Ly
+    if (b.neighbors[3] == MPI_PROC_NULL) { // Глобальная граница Y=Ly
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
                  int global_i = b.x_start + i_loc;
@@ -356,35 +340,12 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
             }
         }
     }
-    if (b.neighbors[4] == MPI_PROC_NULL) { // На глобальной границе Z=0
-        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
-            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                 int global_i = b.x_start + i_loc;
-                 int global_j = b.y_start + j_loc;
-                 double x = global_i * g.h_x;
-                 double y = global_j * g.h_y;
-                 u_padded[1][b.padded_index(i_loc + 1, j_loc + 1, 0)] = 0.0; // u=0 на z=0
-            }
-        }
-    }
-    if (b.neighbors[5] == MPI_PROC_NULL) { // На глобальной границе Z=Lz
-        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
-            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                 int global_i = b.x_start + i_loc;
-                 int global_j = b.y_start + j_loc;
-                 double x = global_i * g.h_x;
-                 double y = global_j * g.h_y;
-                 u_padded[1][b.padded_index(i_loc + 1, j_loc + 1, b.padded_Nz - 1)] = 0.0; // u=0 на z=Lz
-            }
-        }
-    }
 
     // Обмен ghost-слоями для u^1
     fill_send_buffers(b, u_padded[1]);
     exchange_ghost_layers(b, u_padded[1], comm_cart);
 
     // --- Шаг 4: Принудительно обеспечиваем периодичность по y для обоих слоёв ---
-    // Это делается после обмена, чтобы ghost-слои также отражали периодичность
     if (b.neighbors[2] == MPI_PROC_NULL) { // Процесс на границе Y=0
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
@@ -401,7 +362,6 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
             }
         }
     }
-
 
     // --- Шаг 5: Проверка погрешности на u^1 ---
     double local_error = 0.0;
@@ -460,26 +420,32 @@ void run_algo(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const 
             }
         }
 
-        // --- 2. Граничные точки x=0, x=Lx (1-го рода) ---
-        for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
-            for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                    int global_i = b.x_start + i_loc;
-                    if (global_i == 0 || global_i == g.N) {
-                         u_padded[next][b.local_index(i_loc, j_loc, k_loc)] = 0.0;
-                    }
+        // --- 2. Граничные точки x=0, x=N (1-го рода) ---
+        for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
+            for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
+                if (b.x_start == 0) { // Процесс на глобальной границе x=0
+                     u_padded[next][b.local_index(0, j_loc, k_loc)] = 0.0; // i_loc=0 соответствует global_i=x_start=0
+                }
+                if (b.x_end == g.N) { // Процесс на глобальной границе x=N
+                     int local_i = b.local_Nx - 1; // Последний индекс в блоке
+                     if (b.x_start + local_i == g.N) { // Проверяем, соответствует ли он глобальному N
+                         u_padded[next][b.local_index(local_i, j_loc, k_loc)] = 0.0;
+                     }
                 }
             }
         }
 
-        // --- 3. Граничные точки z=0, z=Lz (1-го рода) ---
+        // --- 3. Граничные точки z=0, z=N (1-го рода) ---
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                    int global_k = b.z_start + k_loc;
-                    if (global_k == 0 || global_k == g.N) {
-                         u_padded[next][b.local_index(i_loc, j_loc, k_loc)] = 0.0;
-                    }
+                if (b.z_start == 0) { // Процесс на глобальной границе z=0
+                     u_padded[next][b.local_index(i_loc, j_loc, 0)] = 0.0; // k_loc=0 соответствует global_k=z_start=0
+                }
+                if (b.z_end == g.N) { // Процесс на глобальной границе z=N
+                     int local_k = b.local_Nz - 1; // Последний индекс в блоке
+                     if (b.z_start + local_k == g.N) { // Проверяем, соответствует ли он глобальному N
+                         u_padded[next][b.local_index(i_loc, j_loc, local_k)] = 0.0;
+                     }
                 }
             }
         }
