@@ -1,11 +1,17 @@
 #ifndef EQUATION_HPP
 #define EQUATION_HPP
+
 #include <cmath>
 #include <vector>
 #include <iostream>
+#include <mpi.h>
+
 typedef std::vector<std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
+typedef std::vector<VDOUB> VVEC;
+
 #define TIME_STEPS 20  // 20 временных шагов
+
 class Grid {
 public:
     int N;
@@ -24,32 +30,17 @@ public:
         return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
-inline double u_analytical(const Grid& g, double x, double y, double z, double t) {
-    double at = (M_PI / 2.0) * std::sqrt(1.0 / (g.Lx * g.Lx) + 4.0 / (g.Ly * g.Ly) + 9.0 / (g.Lz * g.Lz));
-    return std::sin(M_PI * x / g.Lx)
-         * std::sin(2.0 * M_PI * y / g.Ly)
-         * std::sin(3.0 * M_PI * z / g.Lz)
-         * std::cos(at * t);
-}
-void solve_mpi(const Grid& g, Block& b,
-               int dimx, int dimy, int dimz,
-               MPI_Comm comm_cart,
-               double& time,
-               double& max_inaccuracy,
-               double& first_step_inaccuracy,
-               double& last_step_inaccuracy,
-               VDOUB& result);
 
 class Block {
 public:
     int rank, x_start, x_end, y_start, y_end, z_start, z_end;
     int Nx, Ny, Nz, padded_Nx, padded_Ny, padded_Nz;
-    vector<int> neighbors;
-    vector<double> left_send, left_recv, right_send, right_recv;
-    vector<double> bottom_send, bottom_recv, top_send, top_recv;
-    vector<double> front_send, front_recv, back_send, back_recv;
+    std::vector<int> neighbors;
+    std::vector<double> left_send, left_recv, right_send, right_recv;
+    std::vector<double> bottom_send, bottom_recv, top_send, top_recv;
+    std::vector<double> front_send, front_recv, back_send, back_recv;
 
-    Block(const Grid& g, const vector<int>& nb, const int coords[3], 
+    Block(const Grid& g, const std::vector<int>& nb, const int coords[3], 
           int dimx, int dimy, int dimz, int r) : neighbors(nb), rank(r) {
         // Расчет локальных границ блока
         x_start = coords[0] * (g.N / dimx);
@@ -90,5 +81,22 @@ public:
         return ((i) * padded_Ny + (j)) * padded_Nz + (k);
     }
 };
+
+inline double u_analytical(const Grid& g, double x, double y, double z, double t) {
+    double at = (M_PI / 2.0) * std::sqrt(1.0 / (g.Lx * g.Lx) + 4.0 / (g.Ly * g.Ly) + 9.0 / (g.Lz * g.Lz));
+    return std::sin(M_PI * x / g.Lx)
+         * std::sin(2.0 * M_PI * y / g.Ly)
+         * std::sin(3.0 * M_PI * z / g.Lz)
+         * std::cos(at * t);
+}
+
+void solve_mpi(const Grid& g, Block& b,
+               int dimx, int dimy, int dimz,
+               MPI_Comm comm_cart,
+               double& time,
+               double& max_inaccuracy,
+               double& first_step_inaccuracy,
+               double& last_step_inaccuracy,
+               VDOUB& result);
 
 #endif

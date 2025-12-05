@@ -7,7 +7,6 @@
 #include <vector>
 using namespace std;
 
-
 inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
     double d2x = (u[b.local_index(i - 1, j, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i + 1, j, k)]) / (g.h_x * g.h_x);
     double d2y = (u[b.local_index(i, j - 1, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j + 1, k)]) / (g.h_y * g.h_y);
@@ -16,9 +15,9 @@ inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, i
 }
 
 void exchange_halos(Block& b, VDOUB& u) {
-    const int tag_left   = 1, tag_right  = 2,
-              tag_bottom = 3, tag_top    = 4,
-              tag_front  = 5, tag_back   = 6;
+    const int tag_left = 1, tag_right = 2,
+              tag_bottom = 3, tag_top = 4,
+              tag_front = 5, tag_back = 6;
     MPI_Request req[12];
     int nreq = 0;
     
@@ -180,7 +179,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
     }
 }
 
-void init(const Grid& g, Block& b, vector<VDOUB>& u, double& max_inacc, double& inacc_first) {
+void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_first) {
     int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
     
     // --- Шаг 1: Заполняем ВСЕ точки u[0] аналитически ---
@@ -261,7 +260,7 @@ void init(const Grid& g, Block& b, vector<VDOUB>& u, double& max_inacc, double& 
         cout << "Max start inaccuracy: " << global_max_error << endl;
 }
 
-void run_algo(const Grid& g, Block& b, vector<VDOUB>& u,
+void run_algo(const Grid& g, Block& b, VVEC& u,
               double& max_inacc, double& last_step_inaccuracy) {
     for (int step = 2; step < TIME_STEPS; ++step) {
         int prev = (step - 2) % 3;
@@ -344,7 +343,7 @@ void solve_mpi(const Grid& g, Block& b,
                VDOUB& result) {
     int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
     VDOUB u0(total_size), u1(total_size), u2(total_size);
-    vector<VDOUB> u = {u0, u1, u2};
+    VVEC u = {u0, u1, u2};
     
     double start_time;
     MPI_Barrier(MPI_COMM_WORLD);
