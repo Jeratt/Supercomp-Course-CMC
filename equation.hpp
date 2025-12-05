@@ -3,12 +3,13 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <string>
 #include <mpi.h>
 
 // Используем константу из задания 3
 #define T 20  // 20 временных шагов
 
-typedef std::vector<std::vector<double>> VDOUB2D;
+typedef std::vector<std::vector<double>> VDOUB2D; // Используем VDOUB2D как в OMP решении
 typedef std::vector<double> VDOUB;
 typedef std::vector<int> VINT;
 
@@ -98,12 +99,12 @@ public:
         return i * (this->padded_Ny * this->padded_Nz) + j * this->padded_Nz + k;
     }
 
-    void print_block_info() const {
-        std::cout << "Block " << this->rank << " cooord ("<< this->dim0_rank << "," << this->dim1_rank << "," << this->dim2_rank << ") info:\n\t" <<
-            "Nx = " << this->Nx << "\n\t\t" << "x_start = " << this->x_start << "\n\t\t" << "x_end = " << this->x_end << "\n\t" <<
-                "Ny = " << this->Ny << "\n\t\t" << "y_start = " << this->y_start << "\n\t\t" << "y_end = " << this->y_end << "\n\t" <<
-                    "Nz = " << this->Nz << "\n\t\t" << "z_start = " << this->z_start << "\n\t\t" << "z_end = " << this->z_end << "\n\t" <<  std::endl;
-    }
+    // void print_block_info() const {
+    //     std::cout << "Block " << this->rank << " cooord ("<< this->dim0_rank << "," << this->dim1_rank << "," << this->dim2_rank << ") info:\n\t" <<
+    //         "Nx = " << this->Nx << "\n\t\t" << "x_start = " << this->x_start << "\n\t\t" << "x_end = " << this->x_end << "\n\t" <<
+    //             "Ny = " << this->Ny << "\n\t\t" << "y_start = " << this->y_start << "\n\t\t" << "y_end = " << this->y_end << "\n\t" <<
+    //                 "Nz = " << this->Nz << "\n\t\t" << "z_start = " << this->z_start << "\n\t\t" << "z_end = " << this->z_end << "\n\t" <<  std::endl;
+    // }
 };
 
 // u_analytical variant 8 (пока оставляем как есть, будет адаптировано позже)

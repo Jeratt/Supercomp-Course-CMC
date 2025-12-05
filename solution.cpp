@@ -135,7 +135,7 @@ inline void fill_send_buffers(Block& b, VDOUB& ui_local, const int& dim0_n, cons
         } else {
             if (j == 1)
                 b.left_send[dim0_ind] = ui_local[b.index(i, j, k)];
-            else if (i == b.Ny) // Ошибка в оригинальном коде: i вместо j
+            else if (j == b.Ny) // Исправлено: было i == b.Ny
                 b.right_send[dim0_ind] = ui_local[b.index(i, j, k)];
         }
     }
@@ -170,7 +170,7 @@ inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& ui_lo
            (ui_local[b.index(i, j, k - 1)] - 2 * ui_local[b.index(i, j, k)] + ui_local[b.index(i, j, k + 1)]) / pow(g.h_z, 2);
 }
 
-void init(const Grid& g, Block& b, VVEC& u_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& max_inaccuracy, double& first_step_inaccuracy) {
+void init(const Grid& g, Block& b, VDOUB2D& u_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& max_inaccuracy, double& first_step_inaccuracy) {
     // boundary conditions (7-9) variant 8: x - П, y - П, z - П
     // NOTE: This section is specific to variant 8 and needs adaptation for variant 3.
     // For now, it remains as per original variant 8 logic.
@@ -281,7 +281,7 @@ void init(const Grid& g, Block& b, VVEC& u_local, const int& dim0_n, const int& 
     }
 }
 
-void run_algo(const Grid& g, Block& b, VVEC& u_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& max_inaccuracy, double& last_step_inaccuracy) {
+void run_algo(const Grid& g, Block& b, VDOUB2D& u_local, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& max_inaccuracy, double& last_step_inaccuracy) {
     int next, curr, prev;
     for (int s = 2; s < T; ++s) { // Используем T из заголовка
         next = s % 3;
@@ -323,8 +323,9 @@ void run_algo(const Grid& g, Block& b, VVEC& u_local, const int& dim0_n, const i
 }
 
 void solve_equation(const Grid& grid, Block& block, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result) {
-    VDOUB u0_local(block.N), u1_local(block.N), u2_local(block.N);
-    VVEC u_local{u0_local, u1_local, u2_local}; // Используем VVEC
+    int n_total = block.N; // block.N уже рассчитан как padded_Nx * padded_Ny * padded_Nz
+    VDOUB u0_local(n_total), u1_local(n_total), u2_local(n_total);
+    VDOUB2D u_local{u0_local, u1_local, u2_local}; // Теперь используем VDOUB2D
     MPI_Barrier(MPI_COMM_WORLD);
     double start_time = MPI_Wtime();
     max_inaccuracy = 0.0;
