@@ -5,8 +5,58 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
-
 using namespace std;
+
+class Block {
+public:
+    int rank, x_start, x_end, y_start, y_end, z_start, z_end;
+    int Nx, Ny, Nz, padded_Nx, padded_Ny, padded_Nz;
+    vector<int> neighbors;
+    vector<double> left_send, left_recv, right_send, right_recv;
+    vector<double> bottom_send, bottom_recv, top_send, top_recv;
+    vector<double> front_send, front_recv, back_send, back_recv;
+
+    Block(const Grid& g, const vector<int>& nb, const int coords[3], 
+          int dimx, int dimy, int dimz, int r) : neighbors(nb), rank(r) {
+        // Расчет локальных границ блока
+        x_start = coords[0] * (g.N / dimx);
+        x_end = (coords[0] + 1) * (g.N / dimx);
+        if (coords[0] == dimx - 1) x_end = g.N;
+        
+        y_start = coords[1] * (g.N / dimy);
+        y_end = (coords[1] + 1) * (g.N / dimy);
+        if (coords[1] == dimy - 1) y_end = g.N;
+        
+        z_start = coords[2] * (g.N / dimz);
+        z_end = (coords[2] + 1) * (g.N / dimz);
+        if (coords[2] == dimz - 1) z_end = g.N;
+        
+        Nx = x_end - x_start;
+        Ny = y_end - y_start;
+        Nz = z_end - z_start;
+        
+        // Размеры с учетом гало-зон (1 слой с каждой стороны)
+        padded_Nx = Nx + 2;
+        padded_Ny = Ny + 2;
+        padded_Nz = Nz + 2;
+        
+        // Инициализация буферов для обмена гало-зонами
+        int yz_size = Ny * Nz;
+        int xz_size = Nx * Nz;
+        int xy_size = Nx * Ny;
+        
+        left_send.resize(yz_size); left_recv.resize(yz_size);
+        right_send.resize(yz_size); right_recv.resize(yz_size);
+        bottom_send.resize(xz_size); bottom_recv.resize(xz_size);
+        top_send.resize(xz_size); top_recv.resize(xz_size);
+        front_send.resize(xy_size); front_recv.resize(xy_size);
+        back_send.resize(xy_size); back_recv.resize(xy_size);
+    }
+    
+    inline int local_index(int i, int j, int k) const {
+        return ((i) * padded_Ny + (j)) * padded_Nz + (k);
+    }
+};
 
 inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
     double d2x = (u[b.local_index(i - 1, j, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i + 1, j, k)]) / (g.h_x * g.h_x);
@@ -19,11 +69,10 @@ void exchange_halos(Block& b, VDOUB& u) {
     const int tag_left   = 1, tag_right  = 2,
               tag_bottom = 3, tag_top    = 4,
               tag_front  = 5, tag_back   = 6;
-
     MPI_Request req[12];
     int nreq = 0;
-
-    // X axis -> first order
+    
+    // X axis -> first order (Dirichlet boundaries)
     if (b.neighbors[0] != -1) { // left neighbor exists
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -38,7 +87,7 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Irecv(b.right_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_left,   MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.right_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_right,  MPI_COMM_WORLD, &req[nreq++]);
     }
-
+    
     // Y axis -> periodic
     if (b.neighbors[2] != -1) { // bottom (y-)
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
@@ -54,8 +103,8 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Irecv(b.top_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_bottom, MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
     }
-
-    // Z axis -> first order
+    
+    // Z axis -> first order (Dirichlet boundaries)
     if (b.neighbors[4] != -1) { // front (z-)
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
@@ -70,9 +119,10 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Irecv(b.back_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_front, MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.back_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
     }
-
+    
     MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
-
+    
+    // Заполнение гало-зон полученными значениями
     if (b.neighbors[0] != -1) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -83,7 +133,6 @@ void exchange_halos(Block& b, VDOUB& u) {
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 u[b.local_index(b.Nx + 1, j, k)] = b.right_recv[idx];
     }
-
     if (b.neighbors[2] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -94,7 +143,6 @@ void exchange_halos(Block& b, VDOUB& u) {
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 u[b.local_index(i, b.Ny + 1, k)] = b.top_recv[idx];
     }
-
     if (b.neighbors[4] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
@@ -107,82 +155,208 @@ void exchange_halos(Block& b, VDOUB& u) {
     }
 }
 
-void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u) {
-    // x
+void enforce_periodic_y(const Grid& g, Block& b, VDOUB& u) {
+    // Глобальные координаты для проверки, является ли блок граничным по y
+    bool is_y_min_block = (b.y_start == 0);
+    bool is_y_max_block = (b.y_end == g.N);
+    
+    // Если блок находится на нижней границе (y=0) и имеет соседа сверху
+    if (is_y_min_block && b.neighbors[3] != -1) {
+        for (int i = 0; i <= b.Nx + 1; ++i) {
+            for (int k = 0; k <= b.Nz + 1; ++k) {
+                // Значение из верхней гало-зоны (от соседа) копируется в нижнюю границу
+                u[b.local_index(i, 0, k)] = u[b.local_index(i, b.Ny + 1, k)];
+            }
+        }
+    }
+    
+    // Если блок находится на верхней границе (y=L) и имеет соседа снизу
+    if (is_y_max_block && b.neighbors[2] != -1) {
+        for (int i = 0; i <= b.Nx + 1; ++i) {
+            for (int k = 0; k <= b.Nz + 1; ++k) {
+                // Значение из нижней гало-зоны (от соседа) копируется в верхнюю границу
+                u[b.local_index(i, b.Ny + 1, k)] = u[b.local_index(i, 0, k)];
+            }
+        }
+    }
+}
+
+void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
+    // x - граничные условия 1-го рода
     if (b.x_start == 0) {
-        for (int j = 1; j <= b.Ny; ++j)
-            for (int k = 1; k <= b.Nz; ++k)
+        for (int j = 0; j <= b.Ny + 1; ++j)
+            for (int k = 0; k <= b.Nz + 1; ++k)
                 u[b.local_index(0, j, k)] = 0.0;
     }
     if (b.x_end == g.N) {
-        for (int j = 1; j <= b.Ny; ++j)
-            for (int k = 1; k <= b.Nz; ++k)
+        for (int j = 0; j <= b.Ny + 1; ++j)
+            for (int k = 0; k <= b.Nz + 1; ++k)
                 u[b.local_index(b.Nx + 1, j, k)] = 0.0;
     }
-
-    // z
+    
+    // z - граничные условия 1-го рода
     if (b.z_start == 0) {
-        for (int i = 1; i <= b.Nx; ++i)
-            for (int j = 1; j <= b.Ny; ++j)
+        for (int i = 0; i <= b.Nx + 1; ++i)
+            for (int j = 0; j <= b.Ny + 1; ++j)
                 u[b.local_index(i, j, 0)] = 0.0;
     }
     if (b.z_end == g.N) {
-        for (int i = 1; i <= b.Nx; ++i)
-            for (int j = 1; j <= b.Ny; ++j)
+        for (int i = 0; i <= b.Nx + 1; ++i)
+            for (int j = 0; j <= b.Ny + 1; ++j)
                 u[b.local_index(i, j, b.Nz + 1)] = 0.0;
     }
-
-    // y -> no need
+    
+    // y - периодические условия (уже обеспечены функцией enforce_periodic_y)
+    // Но для блоков на границах также устанавливаем значения из аналитического решения
+    if (b.y_start == 0) {
+        for (int i = 0; i <= b.Nx + 1; ++i) {
+            double x = (b.x_start + i - 1) * g.h_x;
+            for (int k = 0; k <= b.Nz + 1; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                // Нижняя граница (y=0)
+                u[b.local_index(i, 0, k)] = u_analytical(g, x, 0.0, z, t);
+            }
+        }
+    }
+    if (b.y_end == g.N) {
+        for (int i = 0; i <= b.Nx + 1; ++i) {
+            double x = (b.x_start + i - 1) * g.h_x;
+            for (int k = 0; k <= b.Nz + 1; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                // Верхняя граница (y=L)
+                u[b.local_index(i, b.Ny + 1, k)] = u_analytical(g, x, g.Ly, z, t);
+            }
+        }
+    }
 }
 
-void init(const Grid& g, Block& b, VVEC& u) {
-    // padding
-    fill(u[0].begin(), u[0].end(), 0.0);
-    fill(u[1].begin(), u[1].end(), 0.0);
-
+void init(const Grid& g, Block& b, vector<VDOUB>& u, double& max_inacc, double& inacc_first) {
+    int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
+    
+    // --- Шаг 1: Заполняем ВСЕ точки u[0] аналитически ---
+    for (int i = 0; i <= b.Nx + 1; ++i) {
+        double x = (b.x_start + i - 1) * g.h_x;
+        for (int j = 0; j <= b.Ny + 1; ++j) {
+            double y = (b.y_start + j - 1) * g.h_y;
+            for (int k = 0; k <= b.Nz + 1; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                u[0][b.local_index(i, j, k)] = u_analytical(g, x, y, z, 0.0);
+            }
+        }
+    }
+    
+    // --- Шаг 2: Вычисляем u[1] ТОЛЬКО для внутренних точек ---
     for (int i = 1; i <= b.Nx; ++i) {
         double x = (b.x_start + i - 1) * g.h_x;
         for (int j = 1; j <= b.Ny; ++j) {
             double y = (b.y_start + j - 1) * g.h_y;
             for (int k = 1; k <= b.Nz; ++k) {
                 double z = (b.z_start + k - 1) * g.h_z;
-                u[0][b.local_index(i, j, k)] = u_analytical(g, x, y, z, 0.0);
+                u[1][b.local_index(i, j, k)] = u[0][b.local_index(i, j, k)]
+                    + 0.5 * g.a2 * g.tau * g.tau * laplace_operator(g, b, u[0], i, j, k);
             }
         }
     }
-
+    
+    // --- Шаг 3: Заполняем граничные точки u[1] из аналитического решения ---
+    for (int i = 0; i <= b.Nx + 1; ++i) {
+        double x = (b.x_start + i - 1) * g.h_x;
+        for (int j = 0; j <= b.Ny + 1; ++j) {
+            double y = (b.y_start + j - 1) * g.h_y;
+            for (int k = 0; k <= b.Nz + 1; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                // Пропускаем внутренние точки, они уже посчитаны
+                if (i >= 1 && i <= b.Nx && j >= 1 && j <= b.Ny && k >= 1 && k <= b.Nz)
+                    continue;
+                
+                u[1][b.local_index(i, j, k)] = u_analytical(g, x, y, z, g.tau);
+            }
+        }
+    }
+    
+    // --- Шаг 4: Обмениваем гало-зоны для обеспечения согласованности ---
     exchange_halos(b, u[0]);
-    apply_boundary_conditions(g, b, u[0]);
-
-    for (int i = 1; i <= b.Nx; ++i)
-        for (int j = 1; j <= b.Ny; ++j)
-            for (int k = 1; k <= b.Nz; ++k)
-                u[1][b.local_index(i, j, k)] = u[0][b.local_index(i, j, k)]
-                    + 0.5 * g.a2 * g.tau * g.tau * laplace_operator(g, b, u[0], i, j, k);
-
     exchange_halos(b, u[1]);
-    apply_boundary_conditions(g, b, u[1]);
+    
+    // --- Шаг 5: Принудительно обеспечиваем периодичность по y ---
+    enforce_periodic_y(g, b, u[0]);
+    enforce_periodic_y(g, b, u[1]);
+    
+    // --- Шаг 6: Применяем граничные условия 1-го рода ---
+    apply_boundary_conditions(g, b, u[0], 0.0);
+    apply_boundary_conditions(g, b, u[1], g.tau);
+    
+    // --- Шаг 7: Проверка погрешности на u[1] ---
+    double local_max_error = 0.0;
+    for (int i = 1; i <= b.Nx; ++i) {
+        double x = (b.x_start + i - 1) * g.h_x;
+        for (int j = 1; j <= b.Ny; ++j) {
+            double y = (b.y_start + j - 1) * g.h_y;
+            for (int k = 1; k <= b.Nz; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                double exact = u_analytical(g, x, y, z, g.tau);
+                double err = fabs(u[1][b.local_index(i, j, k)] - exact);
+                if (err > local_max_error) local_max_error = err;
+            }
+        }
+    }
+    
+    double global_max_error;
+    MPI_Allreduce(&local_max_error, &global_max_error, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    
+    max_inacc = max(max_inacc, global_max_error);
+    inacc_first = global_max_error;
+    
+    if (b.rank == 0)
+        cout << "Max start inaccuracy: " << global_max_error << endl;
 }
 
-void run_algo(const Grid& g, Block& b, VVEC& u,
-              double& max_inaccuracy, double& last_step_inaccuracy) {
+void run_algo(const Grid& g, Block& b, vector<VDOUB>& u,
+              double& max_inacc, double& last_step_inaccuracy) {
     for (int step = 2; step < TIME_STEPS; ++step) {
         int prev = (step - 2) % 3;
         int curr = (step - 1) % 3;
         int next = step % 3;
-
-        for (int i = 1; i <= b.Nx; ++i)
-            for (int j = 1; j <= b.Ny; ++j)
-                for (int k = 1; k <= b.Nz; ++k)
+        double t = step * g.tau;
+        
+        // --- 1. Внутренние точки: стандартная схема ---
+        for (int i = 1; i <= b.Nx; ++i) {
+            for (int j = 1; j <= b.Ny; ++j) {
+                for (int k = 1; k <= b.Nz; ++k) {
                     u[next][b.local_index(i, j, k)] = 2.0 * u[curr][b.local_index(i, j, k)]
                         - u[prev][b.local_index(i, j, k)]
                         + g.a2 * g.tau * g.tau * laplace_operator(g, b, u[curr], i, j, k);
-
+                }
+            }
+        }
+        
+        // --- 2. Обмениваем гало-зоны ---
         exchange_halos(b, u[next]);
-        apply_boundary_conditions(g, b, u[next]);
-
-        double local_max_err = 0.0;
-        double t = step * g.tau;
+        
+        // --- 3. Заполняем ВСЕ граничные точки из аналитического решения ---
+        for (int i = 0; i <= b.Nx + 1; ++i) {
+            double x = (b.x_start + i - 1) * g.h_x;
+            for (int j = 0; j <= b.Ny + 1; ++j) {
+                double y = (b.y_start + j - 1) * g.h_y;
+                for (int k = 0; k <= b.Nz + 1; ++k) {
+                    double z = (b.z_start + k - 1) * g.h_z;
+                    // Пропускаем внутренние точки
+                    if (i >= 1 && i <= b.Nx && j >= 1 && j <= b.Ny && k >= 1 && k <= b.Nz)
+                        continue;
+                    
+                    u[next][b.local_index(i, j, k)] = u_analytical(g, x, y, z, t);
+                }
+            }
+        }
+        
+        // --- 4. Принудительно обеспечиваем ПЕРИОДИЧНОСТЬ по y ---
+        enforce_periodic_y(g, b, u[next]);
+        
+        // --- 5. Применяем граничные условия 1-го рода ---
+        apply_boundary_conditions(g, b, u[next], t);
+        
+        // --- 6. Подсчёт погрешности ---
+        double local_max_error = 0.0;
         for (int i = 1; i <= b.Nx; ++i) {
             double x = (b.x_start + i - 1) * g.h_x;
             for (int j = 1; j <= b.Ny; ++j) {
@@ -191,21 +365,22 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
                     double z = (b.z_start + k - 1) * g.h_z;
                     double exact = u_analytical(g, x, y, z, t);
                     double err = fabs(u[next][b.local_index(i, j, k)] - exact);
-                    if (err > local_max_err) local_max_err = err;
+                    if (err > local_max_error) local_max_error = err;
                 }
             }
         }
-
-        double global_max_err;
-        MPI_Allreduce(&local_max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-
-        if (global_max_err > max_inaccuracy)
-            max_inaccuracy = global_max_err;
+        
+        double global_max_error;
+        MPI_Allreduce(&local_max_error, &global_max_error, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        
+        if (global_max_error > max_inacc)
+            max_inacc = global_max_error;
+        
         if (step == TIME_STEPS - 1)
-            last_step_inaccuracy = global_max_err;
-
+            last_step_inaccuracy = global_max_error;
+        
         if (b.rank == 0)
-            cout << "Step " << step << ": max inaccuracy = " << global_max_err << endl;
+            cout << "Max inaccuracy on step " << step << " : " << global_max_error << endl;
     }
 }
 
@@ -219,16 +394,23 @@ void solve_mpi(const Grid& g, Block& b,
                VDOUB& result) {
     int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
     VDOUB u0(total_size), u1(total_size), u2(total_size);
-    VVEC u = {u0, u1, u2};
-
-    double start = MPI_Wtime();
-
-    init(g, b, u);
+    vector<VDOUB> u = {u0, u1, u2};
+    
+    double start_time;
+    MPI_Barrier(MPI_COMM_WORLD);
+    start_time = MPI_Wtime();
+    
+    max_inaccuracy = 0.0;
+    init(g, b, u, max_inaccuracy, first_step_inaccuracy);
     run_algo(g, b, u, max_inaccuracy, last_step_inaccuracy);
-
-    double end = MPI_Wtime();
-    time = end - start;
-
+    
+    double end_time;
+    MPI_Barrier(MPI_COMM_WORLD);
+    end_time = MPI_Wtime();
+    
+    time = end_time - start_time;
+    
+    // Копируем результат для внутренних точек
     result.resize(b.Nx * b.Ny * b.Nz);
     for (int i = 1; i <= b.Nx; ++i)
         for (int j = 1; j <= b.Ny; ++j)
