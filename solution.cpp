@@ -1,5 +1,5 @@
 #define _USE_MATH_DEFINES
-#include "equation.h"
+#include "equation.hpp"
 #include <algorithm>
 #include <iostream>
 #include <chrono>
