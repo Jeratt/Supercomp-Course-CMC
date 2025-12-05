@@ -8,9 +8,23 @@
 using namespace std;
 
 inline double laplace_operator(const Grid& g, Block& b, const VDOUB& u, int i, int j, int k) {
+    // x и z остаются без изменений
     double d2x = (u[b.local_index(i - 1, j, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i + 1, j, k)]) / (g.h_x * g.h_x);
-    double d2y = (u[b.local_index(i, j - 1, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j + 1, k)]) / (g.h_y * g.h_y);
     double d2z = (u[b.local_index(i, j, k - 1)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j, k + 1)]) / (g.h_z * g.h_z);
+    
+    // y - периодическое условие
+    double d2y;
+    if (j == 1 && b.y_start == 0) {
+        // Нижняя граница блока на границе области - используем периодичность
+        d2y = (u[b.local_index(i, b.Ny, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j + 1, k)]) / (g.h_y * g.h_y);
+    } else if (j == b.Ny && b.y_end == g.N) {
+        // Верхняя граница блока на границе области - используем периодичность
+        d2y = (u[b.local_index(i, j - 1, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, 1, k)]) / (g.h_y * g.h_y);
+    } else {
+        // Внутренние точки или границы между блоками
+        d2y = (u[b.local_index(i, j - 1, k)] - 2.0 * u[b.local_index(i, j, k)] + u[b.local_index(i, j + 1, k)]) / (g.h_y * g.h_y);
+    }
+    
     return d2x + d2y + d2z;
 }
 
@@ -105,25 +119,19 @@ void exchange_halos(Block& b, VDOUB& u) {
 }
 
 void enforce_periodic_y(const Grid& g, Block& b, VDOUB& u) {
-    // Глобальные координаты для проверки, является ли блок граничным по y
-    bool is_y_min_block = (b.y_start == 0);
-    bool is_y_max_block = (b.y_end == g.N);
-    
-    // Если блок находится на нижней границе (y=0) и имеет соседа сверху
-    if (is_y_min_block && b.neighbors[3] != -1) {
+    // Если блок находится на нижней границе (y=0)
+    if (b.y_start == 0) {
         for (int i = 0; i <= b.Nx + 1; ++i) {
             for (int k = 0; k <= b.Nz + 1; ++k) {
-                // Значение из верхней гало-зоны (от соседа) копируется в нижнюю границу
                 u[b.local_index(i, 0, k)] = u[b.local_index(i, b.Ny + 1, k)];
             }
         }
     }
     
-    // Если блок находится на верхней границе (y=L) и имеет соседа снизу
-    if (is_y_max_block && b.neighbors[2] != -1) {
+    // Если блок находится на верхней границе (y=L)
+    if (b.y_end == g.N) {
         for (int i = 0; i <= b.Nx + 1; ++i) {
             for (int k = 0; k <= b.Nz + 1; ++k) {
-                // Значение из нижней гало-зоны (от соседа) копируется в верхнюю границу
                 u[b.local_index(i, b.Ny + 1, k)] = u[b.local_index(i, 0, k)];
             }
         }
@@ -153,29 +161,6 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
         for (int i = 0; i <= b.Nx + 1; ++i)
             for (int j = 0; j <= b.Ny + 1; ++j)
                 u[b.local_index(i, j, b.Nz + 1)] = 0.0;
-    }
-    
-    // y - периодические условия (уже обеспечены функцией enforce_periodic_y)
-    // Но для блоков на границах также устанавливаем значения из аналитического решения
-    if (b.y_start == 0) {
-        for (int i = 0; i <= b.Nx + 1; ++i) {
-            double x = (b.x_start + i - 1) * g.h_x;
-            for (int k = 0; k <= b.Nz + 1; ++k) {
-                double z = (b.z_start + k - 1) * g.h_z;
-                // Нижняя граница (y=0)
-                u[b.local_index(i, 0, k)] = u_analytical(g, x, 0.0, z, t);
-            }
-        }
-    }
-    if (b.y_end == g.N) {
-        for (int i = 0; i <= b.Nx + 1; ++i) {
-            double x = (b.x_start + i - 1) * g.h_x;
-            for (int k = 0; k <= b.Nz + 1; ++k) {
-                double z = (b.z_start + k - 1) * g.h_z;
-                // Верхняя граница (y=L)
-                u[b.local_index(i, b.Ny + 1, k)] = u_analytical(g, x, g.Ly, z, t);
-            }
-        }
     }
 }
 

@@ -23,7 +23,6 @@ public:
         h_y = Ly / N;
         h_z = Lz / N;
         a2 = 0.25;  // задано в варианте 3
-        // Для устойчивости (условие Куранта): τ ≤ h_min / (a * sqrt(3))
         tau = 0.00005;  // безопасное значение для N от 128 до 512
     }
     inline int index(int i, int j, int k) const {
