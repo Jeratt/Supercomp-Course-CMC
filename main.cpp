@@ -7,6 +7,13 @@
 #include <cmath>
 #include <mpi.h>
 
+double parse_length(const char* arg) {
+    if (strcmp(arg, "pi") == 0)
+        return M_PI;
+    else
+        return atof(arg);
+}
+
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
 
@@ -14,11 +21,10 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &proc_num);
 
-    if ((!strcmp(argv[2], "custom") && argc != 6) || (strcmp(argv[2], "custom") && argc != 3)) {
+    if (argc != 5) {
         if (rank == 0)
-            std::cerr << "Invalid number of arguments. You must specify 2 or 5." << "\n" 
-                      << "Syntax: N L_type [Lx Ly Lz]\n"
-                      << "  L_type: '1' -> Lx=Ly=Lz=1, 'pi' -> Lx=Ly=Lz=π, 'custom' -> specify Lx, Ly, Lz" << std::endl;
+            std::cerr << "Usage: " << argv[0] << " N Lx Ly Lz\n"
+                      << "  Lx, Ly, Lz: numbers (e.g. 1.0) or 'pi'\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -29,18 +35,18 @@ int main(int argc, char* argv[]) {
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    Grid grid = Grid();
-    if (!strcmp(argv[2], "pi"))
-        grid = Grid(N, argv[2], M_PI);
-    else if (!strcmp(argv[2], "1"))
-        grid = Grid(N, argv[2], 1.0);
-    else if (!strcmp(argv[2], "custom"))
-        grid = Grid(N, argv[2], atof(argv[3]), atof(argv[4]), atof(argv[5]));
-    else {
-        if (rank == 0)
-            std::cerr << "Invalid L_type: must be '1', 'pi' or 'custom'" << std::endl;
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
+    double Lx = parse_length(argv[2]);
+    double Ly = parse_length(argv[3]);
+    double Lz = parse_length(argv[4]);
+    
+    // Create L_type string for labeling
+    const char* L_type;
+    if (strcmp(argv[2], "pi") == 0 && strcmp(argv[3], "pi") == 0 && strcmp(argv[4], "pi") == 0)
+        L_type = "pi";
+    else
+        L_type = "custom";
+    
+    Grid grid = Grid(N, const_cast<char*>(L_type), Lx, Ly, Lz);
 
     if (rank == 0)
         std::cout << "Input values:\n\tN = " << grid.N << "\n\tProcesses = " << proc_num 
