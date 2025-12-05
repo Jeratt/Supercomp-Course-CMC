@@ -17,21 +17,19 @@ class Grid {
   public:
     int N;
     double Lx, Ly, Lz, h_x, h_y, h_z, a2, tau;
-    std::string domain_label;
-    std::string label_x, label_y, label_z;
+    std::string domain_label; // Соответствует комбинации Lx_Ly_Lz
+    std::string label_x, label_y, label_z; // Индивидуальные метки
 
     Grid(int N, double Lx, double Ly, double Lz, const std::string& label_x, const std::string& label_y, const std::string& label_z)
         : N(N), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label_x + "_" + label_y + "_" + label_z), label_x(label_x), label_y(label_y), label_z(label_z) {
         h_x = Lx / N;
         h_y = Ly / N;
         h_z = Lz / N;
-        a2 = 0.25;  // a^2 = 1/4 for variant 3
-        // Примерная настройка tau для устойчивости
+        a2 = 0.25; // a^2 = 1/4 for variant 3
+        // Расчет tau для устойчивости
         double temp_min = std::min(h_x, h_y);
         double min_h = std::min(temp_min, h_z);
-        // Условие устойчивости: tau <= min_h / (sqrt(3) * sqrt(a2))
-        // sqrt(a2) = 0.5, sqrt(3) ~ 1.732
-        tau = 0.9 * min_h / (1.732 * 0.5); // 0.9 - немного меньше 1 для надежности
+        tau = 0.9 * min_h / (std::sqrt(a2 * 3)); // Примерный расчет, 0.9 - немного меньше 1 для надежности
     }
 
     inline int index(const int& i, const int& j, const int& k) const {

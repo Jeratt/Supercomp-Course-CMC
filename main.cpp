@@ -1,5 +1,5 @@
 #define _USE_MATH_DEFINES
-#include "equation.hpp" // Убедитесь, что подключаете вашу версию
+#include "equation.hpp"
 #include <iostream>
 #include <fstream>
 #include <cstring>
@@ -49,11 +49,11 @@ int main(int argc, char* argv[]) {
     if (strcmp(arg_ly, "pi") == 0) ly_label = "pi"; else ly_label = std::string(arg_ly);
     if (strcmp(arg_lz, "pi") == 0) lz_label = "pi"; else lz_label = std::string(arg_lz);
     
-    Grid grid = Grid(N, Lx, Ly, Lz, lx_label, ly_label, lz_label); // Новый вызов
+    Grid grid = Grid(N, Lx, Ly, Lz, lx_label, ly_label, lz_label);
 
     if (rank == 0)
         std::cout << "Input values:\n\tN = " << grid.N << "\n\tProcesses = " << proc_num 
-                  << "\n\tDomain label = " << grid.domain_label << "\n\tLx = " << grid.Lx // Новый вывод
+                  << "\n\tDomain label = " << grid.domain_label << "\n\tLx = " << grid.Lx 
                   << "\n\tLy = " << grid.Ly << "\n\tLz = " << grid.Lz << std::endl;
 
     // Создание топологии

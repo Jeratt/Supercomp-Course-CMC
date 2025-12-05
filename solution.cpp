@@ -166,6 +166,7 @@ inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& ui_pa
     double d2x = (ui_padded[b.padded_index(i_pad - 1, j_pad, k_pad)] - 2.0 * ui_padded[b.padded_index(i_pad, j_pad, k_pad)] + ui_padded[b.padded_index(i_pad + 1, j_pad, k_pad)]) / (g.h_x * g.h_x);
 
     // y-направление: периодические условия (обрабатываются через ghost или принудительно в цикле)
+    // Используем ghost-слои для периодичности
     double d2y = (ui_padded[b.padded_index(i_pad, j_pad - 1, k_pad)] - 2.0 * ui_padded[b.padded_index(i_pad, j_pad, k_pad)] + ui_padded[b.padded_index(i_pad, j_pad + 1, k_pad)]) / (g.h_y * g.h_y);
 
     // z-направление: граничные условия 1-го рода
@@ -194,11 +195,9 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
 
     // --- Заполнение ghost-слоев u^0 по аналитическому решению или соседям ---
     // Глобальные границы x и z (1-го рода) -> устанавливаем 0.0 или аналитическое значение в ghost
-    // Это делается *до* обмена, чтобы ghost-значения на глобальных границах были корректны
     if (b.neighbors[0] == MPI_PROC_NULL) { // Глобальная граница X=0
         for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                 // Ghost индекс (i_pad = 0)
                  u_padded[0][b.padded_index(0, j_loc + 1, k_loc + 1)] = 0.0; // u=0 на x=0
             }
         }
@@ -206,7 +205,6 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
     if (b.neighbors[1] == MPI_PROC_NULL) { // Глобальная граница X=Lx
         for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
             for (int k_loc = 0; k_loc < b.local_Nz; ++k_loc) {
-                 // Ghost индекс (i_pad = padded_Nx - 1)
                  u_padded[0][b.padded_index(b.padded_Nx - 1, j_loc + 1, k_loc + 1)] = 0.0; // u=0 на x=Lx
             }
         }
@@ -214,7 +212,6 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
     if (b.neighbors[4] == MPI_PROC_NULL) { // Глобальная граница Z=0
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                 // Ghost индекс (k_pad = 0)
                  u_padded[0][b.padded_index(i_loc + 1, j_loc + 1, 0)] = 0.0; // u=0 на z=0
             }
         }
@@ -222,7 +219,6 @@ void init(const Grid& g, Block& b, VVEC& u_padded, const int& dim0_n, const int&
     if (b.neighbors[5] == MPI_PROC_NULL) { // Глобальная граница Z=Lz
         for (int i_loc = 0; i_loc < b.local_Nx; ++i_loc) {
             for (int j_loc = 0; j_loc < b.local_Ny; ++j_loc) {
-                 // Ghost индекс (k_pad = padded_Nz - 1)
                  u_padded[0][b.padded_index(i_loc + 1, j_loc + 1, b.padded_Nz - 1)] = 0.0; // u=0 на z=Lz
             }
         }
