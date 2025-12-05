@@ -1,65 +1,51 @@
-#ifndef EQUATION_H
-#define EQUATION_H
-
+#ifndef EQUATION_HPP
+#define EQUATION_HPP
 #include <iostream>
 #include <vector>
 #include <cmath>
 #include <mpi.h>
-#include <algorithm> // Для std::min/max
 
-#define TIME_STEPS 20
+// Используем константу из задания 3
+#define T 20  // 20 временных шагов
 
-typedef std::vector< std::vector<double>> VVEC;
+typedef std::vector<std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
 typedef std::vector<int> VINT;
 
 class Grid {
-  public:
+public:
     int N;
     double Lx, Ly, Lz, h_x, h_y, h_z, a2, tau;
-    std::string domain_label; // Соответствует комбинации Lx_Ly_Lz
-    std::string label_x, label_y, label_z; // Индивидуальные метки
+    std::string domain_label; // Не используется в MPI, но добавлено для совместимости
 
-    Grid(int N, double Lx, double Ly, double Lz, const std::string& label_x, const std::string& label_y, const std::string& label_z)
-        : N(N), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label_x + "_" + label_y + "_" + label_z), label_x(label_x), label_y(label_y), label_z(label_z) {
+    Grid(int N, double Lx, double Ly, double Lz, const std::string& label)
+        : N(N), Lx(Lx), Ly(Ly), Lz(Lz), domain_label(label) {
         h_x = Lx / N;
         h_y = Ly / N;
         h_z = Lz / N;
-        a2 = 0.25; // a^2 = 1/4 for variant 3
-        // Расчет tau для устойчивости
-        double temp_min = std::min(h_x, h_y);
-        double min_h = std::min(temp_min, h_z);
-        tau = 0.9 * min_h / (std::sqrt(a2 * 3)); // Примерный расчет, 0.9 - немного меньше 1 для надежности
+        // Для варианта 3: a2 = 0.25
+        a2 = 0.25;
+        // Примерная безопасная константа для N от 128 до 512:
+        tau = 0.00005;  // уменьшено вдвое по сравнению с 0.0001
     }
 
-    inline int index(const int& i, const int& j, const int& k) const {
-        // Глобальный индекс для сетки (i, j, k от 0 до N включительно)
+    inline int index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
 
 class Block {
-  public:
-    int N; // Общий размер padded сетки
-    int local_Nx, local_Ny, local_Nz; // Размеры внутренней (локальной) сетки (без ghost)
-    int padded_Nx, padded_Ny, padded_Nz; // Размеры сетки с ghost-слоями
-    int x_start, y_start, z_start, x_end, y_end, z_end; // Индексы начала и конца локальной области во ВСЕЙ (глобальной) сетке (включая границы)
-    int rank, dim0_rank, dim1_rank, dim2_rank;
-    VINT neighbors; // 6 соседей
-
-    // Ghost слои для обмена
-    VDOUB send_x_low, send_x_high, recv_x_low, recv_x_high;
-    VDOUB send_y_low, send_y_high, recv_y_low, recv_y_high;
-    VDOUB send_z_low, send_z_high, recv_z_low, recv_z_high;
+public:
+    int N, Nx, Ny, Nz, padded_Nx, padded_Ny, padded_Nz, x_start, y_start, z_start, x_end, y_end, z_end, rank, dim0_rank, dim1_rank, dim2_rank;
+    VINT neighbors;
+    VDOUB left_send, right_send, bottom_send, top_send, front_send, back_send;
+    VDOUB left_recieve, right_recieve, bottom_recieve, top_recieve, front_recieve, back_recieve;
 
     Block(const Grid& g, VINT& neighbors, int coords[], const int& dim0_n, const int& dim1_n, const int& dim2_n, int& rank) {
         this->rank = rank;
         this->dim0_rank = coords[0];
         this->dim1_rank = coords[1];
         this->dim2_rank = coords[2];
-        this->neighbors = neighbors; // Копируем 6 соседей
-
-        // --- Расчет локального размера и глобальных индексов ---
         int base_size_x = (g.N + 1) / dim1_n;
         int remainder_x = (g.N + 1) % dim1_n;
         int base_size_y = (g.N + 1) / dim0_n;
@@ -67,91 +53,65 @@ class Block {
         int base_size_z = (g.N + 1) / dim2_n;
         int remainder_z = (g.N + 1) % dim2_n;
 
-        this->local_Nx = (this->dim1_rank < dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
-        this->local_Ny = (this->dim0_rank < remainder_y) ? (base_size_y + 1) : base_size_y;
-        this->local_Nz = (this->dim2_rank < remainder_z) ? (base_size_z + 1) : base_size_z;
+        // local block sizes by each dim
+        this->Nx = (this->dim1_rank < dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
+        this->Ny = (this->dim0_rank < remainder_y) ? (base_size_y + 1) : base_size_y;
+        this->Nz = (this->dim2_rank < remainder_z) ? (base_size_z + 1) : base_size_z;
 
-        // Глобальные индексы начала и конца локальной области
+        // make fixed length vectors for data transmission between processes
+        this->left_send.resize(this->Nx * this->Nz);
+        this->left_recieve.resize(this->Nx * this->Nz);
+        this->right_send.resize(this->Nx * this->Nz);
+        this->right_recieve.resize(this->Nx * this->Nz);
+        this->bottom_send.resize(this->Ny * this->Nz);
+        this->bottom_recieve.resize(this->Ny * this->Nz);
+        this->top_send.resize(this->Ny * this->Nz);
+        this->top_recieve.resize(this->Ny * this->Nz);
+        this->front_send.resize(this->Nx * this->Ny);
+        this->front_recieve.resize(this->Nx * this->Ny);
+        this->back_send.resize(this->Nx * this->Ny);
+        this->back_recieve.resize(this->Nx * this->Ny);
+
+        // global grid start and end indices
         this->x_end = g.N;
-        for (int i = dim1_rank; i > 0; --i) {
-            this->x_end -= (i <= dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
-        }
-        this->x_start = this->x_end - this->local_Nx + 1;
-
         this->y_start = 0;
-        for (int i = 0; i < dim0_rank; ++i) {
-            this->y_start += (i < remainder_y) ? (base_size_y + 1) : base_size_y;
-        }
-        this->y_end = this->y_start + this->local_Ny - 1;
-
         this->z_start = 0;
-        for (int i = 0; i < dim2_rank; ++i) {
+        for (int i = dim1_rank; i > 0; --i)
+            this->x_end -= (i <= dim1_n - remainder_x) ? base_size_x : (base_size_x + 1);
+        this->x_start = this->x_end - this->Nx + 1;
+        for (int i = 0; i < dim0_rank; ++i)
+            this->y_start += (i < remainder_y) ? (base_size_y + 1) : base_size_y;
+        this->y_end = this->y_start + this->Ny - 1;
+        for (int i = 0; i < dim2_rank; ++i)
             this->z_start += (i < remainder_z) ? (base_size_z + 1) : base_size_z;
-        }
-        this->z_end = this->z_start + this->local_Nz - 1;
+        this->z_end = this->z_start + this->Nz - 1;
 
-        // --- Ghost слои ---
-        this->padded_Nx = this->local_Nx + 2;
-        this->padded_Ny = this->local_Ny + 2;
-        this->padded_Nz = this->local_Nz + 2;
+        // +2 for ghost layers (halo)
+        this->padded_Nx = this->Nx + 2;
+        this->padded_Ny = this->Ny + 2;
+        this->padded_Nz = this->Nz + 2;
         this->N = this->padded_Nx * this->padded_Ny * this->padded_Nz;
-
-        // --- Буферы для обмена ---
-        this->send_x_low.resize(this->local_Ny * this->local_Nz);
-        this->send_x_high.resize(this->local_Ny * this->local_Nz);
-        this->recv_x_low.resize(this->local_Ny * this->local_Nz);
-        this->recv_x_high.resize(this->local_Ny * this->local_Nz);
-
-        this->send_y_low.resize(this->local_Nx * this->local_Nz);
-        this->send_y_high.resize(this->local_Nx * this->local_Nz);
-        this->recv_y_low.resize(this->local_Nx * this->local_Nz);
-        this->recv_y_high.resize(this->local_Nx * this->local_Nz);
-
-        this->send_z_low.resize(this->local_Nx * this->local_Ny);
-        this->send_z_high.resize(this->local_Nx * this->local_Ny);
-        this->recv_z_low.resize(this->local_Nx * this->local_Ny);
-        this->recv_z_high.resize(this->local_Nx * this->local_Ny);
+        this->neighbors = neighbors;
     }
 
-    inline int padded_index(const int& i_padded, const int& j_padded, const int& k_padded) const {
-        if (i_padded < 0 || i_padded >= padded_Nx || j_padded < 0 || j_padded >= padded_Ny || k_padded < 0 || k_padded >= padded_Nz) {
-            return 0; // Или бросить исключение
-        }
-        return i_padded * (padded_Ny * padded_Nz) + j_padded * padded_Nz + k_padded;
-    }
-
-    inline int local_index(const int& i_local, const int& j_local, const int& k_local) const {
-        return padded_index(i_local + 1, j_local + 1, k_local + 1);
-    }
-
-    inline int global_index(const int& i_global, const int& j_global, const int& k_global) const {
-        if (i_global >= x_start && i_global <= x_end && j_global >= y_start && j_global <= y_end && k_global >= z_start && k_global <= z_end) {
-             int local_i = i_global - x_start;
-             int local_j = j_global - y_start;
-             int local_k = k_global - z_start;
-             return padded_index(local_i + 1, local_j + 1, local_k + 1);
-        }
-        return -1;
+    inline int index(const int& i, const int& j, const int& k) const {
+        return i * (this->padded_Ny * this->padded_Nz) + j * this->padded_Nz + k;
     }
 
     void print_block_info() const {
-        std::cout << "Block " << this->rank << " coord ("<< this->dim0_rank << "," << this->dim1_rank << "," << this->dim2_rank << ") info:\n\t" <<
-            "local_Nx = " << this->local_Nx << "\n\t\t" << "x_start = " << this->x_start << "\n\t\t" << "x_end = " << this->x_end << "\n\t" <<
-                "local_Ny = " << this->local_Ny << "\n\t\t" << "y_start = " << this->y_start << "\n\t\t" << "y_end = " << this->y_end << "\n\t" <<
-                    "local_Nz = " << this->local_Nz << "\n\t\t" << "z_start = " << this->z_start << "\n\t\t" << "z_end = " << this->z_end << "\n\t" <<
-                    "padded_Nx/y/z = " << padded_Nx << "/" << padded_Ny << "/" << padded_Nz << "\n\t" <<  std::endl;
+        std::cout << "Block " << this->rank << " cooord ("<< this->dim0_rank << "," << this->dim1_rank << "," << this->dim2_rank << ") info:\n\t" <<
+            "Nx = " << this->Nx << "\n\t\t" << "x_start = " << this->x_start << "\n\t\t" << "x_end = " << this->x_end << "\n\t" <<
+                "Ny = " << this->Ny << "\n\t\t" << "y_start = " << this->y_start << "\n\t\t" << "y_end = " << this->y_end << "\n\t" <<
+                    "Nz = " << this->Nz << "\n\t\t" << "z_start = " << this->z_start << "\n\t\t" << "z_end = " << this->z_end << "\n\t" <<  std::endl;
     }
 };
 
-// u_analytical variant 3
+// u_analytical variant 8 (пока оставляем как есть, будет адаптировано позже)
 inline double u_analytical(const Grid& g, const double& x, const double& y, const double& z, const double& t) {
-    double at = (M_PI / 2.0) * std::sqrt(1.0 / (g.Lx * g.Lx) + 4.0 / (g.Ly * g.Ly) + 9.0 / (g.Lz * g.Lz));
-    return std::sin(M_PI * x / g.Lx)
-         * std::sin(2.0 * M_PI * y / g.Ly)
-         * std::sin(3.0 * M_PI * z / g.Lz)
-         * std::cos(at * t);
+    return sin((2 * M_PI * x) / g.Lx) * sin((4 * M_PI * y) / g.Ly) * sin((6 * M_PI * z) / g.Lz) *
+           cos(M_PI * sqrt((4 / pow(g.Lx, 2)) + (16 / pow(g.Ly, 2)) + (36 / pow(g.Lz, 2))) * t);
 }
 
 void solve_equation(const Grid& grid, Block& block, const int& dim0_n, const int& dim1_n, const int& dim2_n, MPI_Comm& comm_cart, double& time, double& max_inaccuracy, double& first_step_inaccuracy, double& last_step_inaccuracy, VDOUB& result);
 
-#endif //EQUATION_H
+#endif //EQUATION_HPP
