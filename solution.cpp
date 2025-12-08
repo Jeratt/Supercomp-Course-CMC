@@ -199,30 +199,26 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
     
     if (b.y_start == 0) {
         #pragma omp parallel for collapse(2)
-        for (int i = 0; i <= b.Nx + 1; ++i) {
-            double x = (b.x_start + i - 1) * g.h_x;
+        for (int i = 0; i <= b.Nx + 1; ++i)
             for (int k = 0; k <= b.Nz + 1; ++k) {
+                double x = (b.x_start + i - 1) * g.h_x;
                 double z = (b.z_start + k - 1) * g.h_z;
                 u[b.local_index(i, 0, k)] = u_analytical(g, x, 0.0, z, t);
             }
-        }
     }
     
     if (b.y_end == g.N) {
         #pragma omp parallel for collapse(2)
-        for (int i = 0; i <= b.Nx + 1; ++i) {
-            double x = (b.x_start + i - 1) * g.h_x;
+        for (int i = 0; i <= b.Nx + 1; ++i)
             for (int k = 0; k <= b.Nz + 1; ++k) {
+                double x = (b.x_start + i - 1) * g.h_x;
                 double z = (b.z_start + k - 1) * g.h_z;
                 u[b.local_index(i, b.Ny + 1, k)] = u_analytical(g, x, g.Ly, z, t);
             }
-        }
     }
 }
 
 void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_first) {
-    int total_size = b.padded_Nx * b.padded_Ny * b.padded_Nz;
-    
     // --- u0 analytic for all points ---
     #pragma omp parallel for collapse(3)
     for (int i = 0; i <= b.Nx + 1; ++i) {
@@ -373,8 +369,8 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
 }
 
 void solve_mpi(const Grid& g, Block& b,
-               int dimx, int dimy, int dimz,
-               MPI_Comm comm_cart,
+               int /*dimx*/, int /*dimy*/, int /*dimz*/,
+               MPI_Comm /*comm_cart*/,
                double& time,
                double& max_inaccuracy,
                double& first_step_inaccuracy,
