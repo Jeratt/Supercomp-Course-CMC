@@ -42,7 +42,7 @@ for N in "${grid_sizes[@]}"; do
                     -w 00:30 \
                     --stdout "$OUT_FILE" \
                     --stderr "$ERR_FILE" \
-                    ./wave3d_combo "$N" "$nt" "$type" "${L_ARGS[@]}"
+                    ./wave3d_combo "$N" "$nt" "${L_ARGS[@]}"
             done
         done
     done
