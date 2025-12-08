@@ -18,30 +18,33 @@ double parse_length(const string& arg, string& label_part) {
 }
 
 void determine_dimensions(int proc_num, int dims[3]) {
-    // Простой подход: разбиваем на кубические или близкие к кубическим блоки
-    dims[0] = 1;
-    dims[1] = 1;
-    dims[2] = 1;
+    // Для варианта 3 приоритет отдается разбиению по Y (периодическое направление)
+    dims[0] = 1; // X dimension
+    dims[1] = 1; // Y dimension (periodic)
+    dims[2] = 1; // Z dimension
     
-    // Находим множители, стараясь получить примерно равные размеры
-    for (int i = static_cast<int>(cbrt(proc_num)); i >= 1; --i) {
+    // Пытаемся найти оптимальное разбиение
+    int remaining = proc_num;
+    
+    // Сначала пытаемся разбить по Y (периодическое направление)
+    for (int i = static_cast<int>(sqrt(proc_num)); i >= 1; --i) {
         if (proc_num % i == 0) {
-            dims[0] = i;
-            int remaining = proc_num / i;
-            
-            // Находим множители для оставшегося числа
-            for (int j = static_cast<int>(sqrt(remaining)); j >= 1; --j) {
-                if (remaining % j == 0) {
-                    dims[1] = j;
-                    dims[2] = remaining / j;
-                    break;
-                }
-            }
+            dims[1] = i;
+            remaining = proc_num / i;
             break;
         }
     }
     
-    // Гарантируем, что произведение равно числу процессов
+    // Затем разбиваем оставшееся по X и Z
+    for (int i = static_cast<int>(sqrt(remaining)); i >= 1; --i) {
+        if (remaining % i == 0) {
+            dims[0] = i;
+            dims[2] = remaining / i;
+            break;
+        }
+    }
+    
+    // Проверка корректности разбиения
     if (dims[0] * dims[1] * dims[2] != proc_num) {
         dims[0] = 1;
         dims[1] = 1;
@@ -74,6 +77,7 @@ int main(int argc, char* argv[]) {
     double Ly = parse_length(argv[3], ly_label);
     double Lz = parse_length(argv[4], lz_label);
     string domain_label = lx_label + "_" + ly_label + "_" + lz_label;
+    
     Grid grid(N, Lx, Ly, Lz, domain_label);
     
     if (rank == 0) {
@@ -96,6 +100,7 @@ int main(int argc, char* argv[]) {
     
     MPI_Comm comm_cart;
     MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, true, &comm_cart);
+    
     int coords[3];
     MPI_Cart_coords(comm_cart, rank, 3, coords);
     
@@ -108,6 +113,7 @@ int main(int argc, char* argv[]) {
     
     VDOUB result;
     double time = 0, max_inacc = 0, first_inacc = 0, last_inacc = 0;
+    
     solve_mpi(grid, block, dims[0], dims[1], dims[2], comm_cart,
               time, max_inacc, first_inacc, last_inacc, result);
     
