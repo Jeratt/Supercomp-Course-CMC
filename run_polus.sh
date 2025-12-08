@@ -8,7 +8,7 @@
 
 set -e
 
-if [ ! -f ./equation ]; then
+if [ ! -f ./wave3d_combo ]; then
     echo "Error: ./equation not found. Run 'make compile_polus' first."
     exit 1
 fi

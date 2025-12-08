@@ -3,7 +3,7 @@ MPICXX = OMPI_CXX=g++ mpicxx
 INCLUDES = -I/opt/ibm/spectrum_mpi/include
 LIBS = -L/opt/ibm/spectrum_mpi/lib -lmpiprofilesupport -lmpi_ibm
 
-TARGET = wave3d_mpi
+TARGET = wave3d_combo
 SOURCES = main.cpp solution.cpp
 
 compile_polus:
