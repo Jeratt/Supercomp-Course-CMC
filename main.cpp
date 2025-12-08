@@ -54,19 +54,13 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &np);
     
-    if (argc != 5) {
+    // argc должно быть равно 6: имя программы, N, num_threads, Lx, Ly, Lz
+    if (argc != 6) {
         if (rank == 0) {
-            cerr << "Usage: mpirun -np NPROC ./wave3d_mpi N Lx Ly Lz" << endl
+            cerr << "Usage: mpirun -np NPROC ./equation N num_threads Lx Ly Lz" << endl
                  << "  Lx, Ly, Lz: numbers (e.g. 1.0) or 'pi'" << endl;
         }
         MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-    
-    // Устанавливаем число потоков OpenMP (если задано через OMP_NUM_THREADS)
-    const char* omp_env = getenv("OMP_NUM_THREADS");
-    if (omp_env != nullptr) {
-        int t = atoi(omp_env);
-        if (t > 0) omp_set_num_threads(t);
     }
     
     int N = stoi(argv[1]);
@@ -75,18 +69,24 @@ int main(int argc, char* argv[]) {
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     
+    // Устанавливаем число потоков OpenMP из аргумента командной строки
+    int num_threads = stoi(argv[2]);
+    if (num_threads <= 0) {
+        if (rank == 0) cerr << "Number of threads must be positive." << endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    omp_set_num_threads(num_threads);
+    
     string lx_label, ly_label, lz_label;
-    double Lx = parse_length(argv[2], lx_label);
-    double Ly = parse_length(argv[3], ly_label);
-    double Lz = parse_length(argv[4], lz_label);
+    double Lx = parse_length(argv[3], lx_label);
+    double Ly = parse_length(argv[4], ly_label);
+    double Lz = parse_length(argv[5], lz_label);
     string domain_label = lx_label + "_" + ly_label + "_" + lz_label;
     
     Grid grid(N, Lx, Ly, Lz, domain_label);
     
     if (rank == 0) {
-        cout << "MPI+OpenMP run: np=" << np << "  OMP threads=";
-        int t = omp_get_max_threads();
-        cout << t << endl;
+        cout << "MPI+OpenMP run: np=" << np << "  OMP threads=" << num_threads << endl;
         cout << "  N = " << grid.N << endl
              << "  Lx = " << grid.Lx << endl
              << "  Ly = " << grid.Ly << endl
