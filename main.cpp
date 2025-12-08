@@ -5,6 +5,8 @@
 #include <string>
 #include <cmath>
 #include <mpi.h>
+#include <omp.h>   // OpenMP
+
 using namespace std;
 
 double parse_length(const string& arg, string& label_part) {
@@ -22,11 +24,9 @@ void determine_dimensions(int proc_num, int dims[3]) {
     dims[0] = 1; // X dimension
     dims[1] = 1; // Y dimension (periodic)
     dims[2] = 1; // Z dimension
-    
-    // Пытаемся найти оптимальное разбиение
+
     int remaining = proc_num;
-    
-    // Сначала пытаемся разбить по Y (периодическое направление)
+
     for (int i = static_cast<int>(sqrt(proc_num)); i >= 1; --i) {
         if (proc_num % i == 0) {
             dims[1] = i;
@@ -34,8 +34,7 @@ void determine_dimensions(int proc_num, int dims[3]) {
             break;
         }
     }
-    
-    // Затем разбиваем оставшееся по X и Z
+
     for (int i = static_cast<int>(sqrt(remaining)); i >= 1; --i) {
         if (remaining % i == 0) {
             dims[0] = i;
@@ -43,8 +42,7 @@ void determine_dimensions(int proc_num, int dims[3]) {
             break;
         }
     }
-    
-    // Проверка корректности разбиения
+
     if (dims[0] * dims[1] * dims[2] != proc_num) {
         dims[0] = 1;
         dims[1] = 1;
@@ -57,7 +55,7 @@ int main(int argc, char* argv[]) {
     int rank, np;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &np);
-    
+
     if (argc != 5) {
         if (rank == 0) {
             cerr << "Usage: mpirun -np NPROC ./wave3d_mpi N Lx Ly Lz" << endl
@@ -65,58 +63,67 @@ int main(int argc, char* argv[]) {
         }
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-    
+
+    // Устанавливаем число потоков OpenMP (если задано через OMP_NUM_THREADS)
+    const char* omp_env = getenv("OMP_NUM_THREADS");
+    if (omp_env != nullptr) {
+        int t = atoi(omp_env);
+        if (t > 0) omp_set_num_threads(t);
+    }
+
     int N = stoi(argv[1]);
     if (N <= 0) {
         if (rank == 0) cerr << "N must be positive." << endl;
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-    
+
     string lx_label, ly_label, lz_label;
     double Lx = parse_length(argv[2], lx_label);
     double Ly = parse_length(argv[3], ly_label);
     double Lz = parse_length(argv[4], lz_label);
     string domain_label = lx_label + "_" + ly_label + "_" + lz_label;
-    
+
     Grid grid(N, Lx, Ly, Lz, domain_label);
-    
+
     if (rank == 0) {
-        cout << "MPI run: np=" << np << endl
-             << "  N = " << grid.N << endl
+        cout << "MPI+OpenMP run: np=" << np << "  OMP threads=";
+        int t = omp_get_max_threads();
+        cout << t << endl;
+        cout << "  N = " << grid.N << endl
              << "  Lx = " << grid.Lx << endl
              << "  Ly = " << grid.Ly << endl
              << "  Lz = " << grid.Lz << endl
              << "  Domain label = " << grid.domain_label << endl;
     }
-    
+
     int dims[3];
     determine_dimensions(np, dims);
     int periods[3] = {0, 1, 0}; // Периодичность только по Y
-    
+
     if (rank == 0) {
         cout << "Chosen 3D topology: (" << dims[0] << ", " << dims[1] << ", " << dims[2] << ")" << endl
              << "Periodicity: x=" << periods[0] << ", y=" << periods[1] << ", z=" << periods[2] << endl;
     }
-    
+
     MPI_Comm comm_cart;
     MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, true, &comm_cart);
-    
+
     int coords[3];
     MPI_Cart_coords(comm_cart, rank, 3, coords);
-    
+
     vector<int> neighbors(6, -1);
     MPI_Cart_shift(comm_cart, 0, -1, &neighbors[0], &neighbors[1]); // x- / x+
     MPI_Cart_shift(comm_cart, 1, -1, &neighbors[2], &neighbors[3]); // y- / y+
     MPI_Cart_shift(comm_cart, 2, -1, &neighbors[4], &neighbors[5]); // z- / z+
-    
+
     Block block(grid, neighbors, coords, dims[0], dims[1], dims[2], rank);
-    
+
     VDOUB result;
     double time = 0, max_inacc = 0, first_inacc = 0, last_inacc = 0;
-    
+
     solve_mpi(grid, block, dims[0], dims[1], dims[2], comm_cart,
               time, max_inacc, first_inacc, last_inacc, result);
-    
+
     if (rank == 0) {
         cout << "=== RESULT ===" << endl
              << "Time: " << time << " s" << endl
@@ -124,7 +131,7 @@ int main(int argc, char* argv[]) {
              << "First step inaccuracy: " << first_inacc << endl
              << "Last step inaccuracy: " << last_inacc << endl;
     }
-    
+
     MPI_Finalize();
     return 0;
 }

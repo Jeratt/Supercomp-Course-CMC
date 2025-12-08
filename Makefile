@@ -1,4 +1,4 @@
-CFLAGS = -O3 -Wall -Wextra -std=c++11
+CFLAGS = -O3 -Wall -Wextra -std=c++11 -fopenmp
 MPICXX = OMPI_CXX=g++ mpicxx
 INCLUDES = -I/opt/ibm/spectrum_mpi/include
 LIBS = -L/opt/ibm/spectrum_mpi/lib -lmpiprofilesupport -lmpi_ibm

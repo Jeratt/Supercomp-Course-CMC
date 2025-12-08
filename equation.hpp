@@ -5,6 +5,7 @@
 #include <vector>
 #include <iostream>
 #include <mpi.h>
+#include <string>
 
 typedef std::vector<std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
@@ -24,7 +25,7 @@ public:
         h_z = Lz / N;
         a2 = 0.25;  // задано в варианте 3
         // Для устойчивости (условие Куранта): τ ≤ h_min / (a * sqrt(3))
-        tau = 0.00005;  // безопасное значение для N от 128 до 512
+        tau = 0.00005;  // безопасное значение для N от 128 до 512 (как было)
     }
     inline int index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
@@ -40,35 +41,35 @@ public:
     std::vector<double> bottom_send, bottom_recv, top_send, top_recv;
     std::vector<double> front_send, front_recv, back_send, back_recv;
 
-    Block(const Grid& g, const std::vector<int>& nb, const int coords[3], 
+    Block(const Grid& g, const std::vector<int>& nb, const int coords[3],
           int dimx, int dimy, int dimz, int r) : neighbors(nb), rank(r) {
-        // Расчет локальных границ блока
+        // Расчёт локальных границ блока (как в исходном)
         x_start = coords[0] * (g.N / dimx);
         x_end = (coords[0] + 1) * (g.N / dimx);
         if (coords[0] == dimx - 1) x_end = g.N;
-        
+
         y_start = coords[1] * (g.N / dimy);
         y_end = (coords[1] + 1) * (g.N / dimy);
         if (coords[1] == dimy - 1) y_end = g.N;
-        
+
         z_start = coords[2] * (g.N / dimz);
         z_end = (coords[2] + 1) * (g.N / dimz);
         if (coords[2] == dimz - 1) z_end = g.N;
-        
+
         Nx = x_end - x_start;
         Ny = y_end - y_start;
         Nz = z_end - z_start;
-        
-        // Размеры с учетом гало-зон (1 слой с каждой стороны)
+
+        // Размеры с учётом гало-зон (1 слой с каждой стороны)
         padded_Nx = Nx + 2;
         padded_Ny = Ny + 2;
         padded_Nz = Nz + 2;
-        
+
         // Инициализация буферов для обмена гало-зонами
         int yz_size = Ny * Nz;
         int xz_size = Nx * Nz;
         int xy_size = Nx * Ny;
-        
+
         left_send.resize(yz_size); left_recv.resize(yz_size);
         right_send.resize(yz_size); right_recv.resize(yz_size);
         bottom_send.resize(xz_size); bottom_recv.resize(xz_size);
@@ -76,7 +77,7 @@ public:
         front_send.resize(xy_size); front_recv.resize(xy_size);
         back_send.resize(xy_size); back_recv.resize(xy_size);
     }
-    
+
     inline int local_index(int i, int j, int k) const {
         return ((i) * padded_Ny + (j)) * padded_Nz + (k);
     }
