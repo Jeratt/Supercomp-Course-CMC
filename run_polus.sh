@@ -9,7 +9,7 @@
 set -e
 
 if [ ! -f ./wave3d_combo ]; then
-    echo "Error: ./equation not found. Run 'make compile_polus' first."
+    echo "Error: ./wave3d_combo not found. Run 'make compile_polus' first."
     exit 1
 fi
 
@@ -42,7 +42,7 @@ for N in "${grid_sizes[@]}"; do
                     -w 00:30 \
                     --stdout "$OUT_FILE" \
                     --stderr "$ERR_FILE" \
-                    ./equation "$N" "$nt" "$type" "${L_ARGS[@]}"
+                    ./wave3d_combo "$N" "$nt" "$type" "${L_ARGS[@]}"
             done
         done
     done
