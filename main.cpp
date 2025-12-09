@@ -36,7 +36,7 @@ void determine_dimensions(int proc_num, int dims[3]) {
     dims[2] = 1; // Z dimension
     
     // Находим оптимальное разбиение с приоритетом по Y
-    int best_diff = INT_MAX;
+    int best_diff = 1000;
     int best_dims[3] = {1, 1, proc_num}; // По умолчанию все процессы в Z
     
     for (int i = 1; i <= proc_num; ++i) {
