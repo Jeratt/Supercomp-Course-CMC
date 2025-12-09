@@ -68,10 +68,9 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &np);
     
     // argc должно быть равно 7: имя программы, N, num_threads, type, Lx, Ly, Lz
-    if (argc != 7) {
+    if (argc != 6) {
         if (rank == 0) {
-            cerr << "Usage: mpirun -np NPROC ./wave3d_combo N num_threads type Lx Ly Lz" << endl
-                 << "  type: '1' or 'pi'" << endl
+            cerr << "Usage: mpirun -np NPROC ./wave3d_combo N num_threads Lx Ly Lz" << endl
                  << "  Lx, Ly, Lz: numbers (e.g. 1.0) or 'pi'" << endl;
         }
         MPI_Abort(MPI_COMM_WORLD, 1);
@@ -91,13 +90,10 @@ int main(int argc, char* argv[]) {
     }
     omp_set_num_threads(num_threads);
     
-    // Третий аргумент - тип области (1 или pi), но мы его не используем напрямую
-    string type_arg = argv[3];
-    
     string lx_label, ly_label, lz_label;
-    double Lx = parse_length(argv[4], lx_label);
-    double Ly = parse_length(argv[5], ly_label);
-    double Lz = parse_length(argv[6], lz_label);
+    double Lx = parse_length(argv[3], lx_label);
+    double Ly = parse_length(argv[4], ly_label);
+    double Lz = parse_length(argv[5], lz_label);
     
     string domain_label = lx_label + "_" + ly_label + "_" + lz_label;
     Grid grid(N, Lx, Ly, Lz, domain_label);
