@@ -22,7 +22,7 @@ void exchange_halos(Block& b, VDOUB& u) {
     MPI_Request req[12];
     int nreq = 0;
     
-    // X axis - граничные условия первого рода
+    // X axis
     if (b.neighbors[0] != -1) { // left neighbor exists
         #pragma omp parallel for collapse(2)
         for (int j = 1; j <= b.Ny; ++j)
@@ -30,8 +30,8 @@ void exchange_halos(Block& b, VDOUB& u) {
                 int idx = (j - 1) * b.Nz + (k - 1);
                 b.left_send[idx] = u[b.local_index(1, j, k)];
             }
-        MPI_Irecv(b.left_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], tag_right,  MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.left_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], tag_left,   MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.left_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], tag_right, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.left_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[0], tag_left, MPI_COMM_WORLD, &req[nreq++]);
     }
     
     if (b.neighbors[1] != -1) { // right neighbor exists
@@ -41,11 +41,11 @@ void exchange_halos(Block& b, VDOUB& u) {
                 int idx = (j - 1) * b.Nz + (k - 1);
                 b.right_send[idx] = u[b.local_index(b.Nx, j, k)];
             }
-        MPI_Irecv(b.right_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_left,   MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.right_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_right,  MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.right_recv.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_left, MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.right_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_right, MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    // Y axis - периодические условия
+    // Y axis - периодические граничные условия
     if (b.neighbors[2] != -1) { // bottom (y-)
         #pragma omp parallel for collapse(2)
         for (int i = 1; i <= b.Nx; ++i)
@@ -53,7 +53,7 @@ void exchange_halos(Block& b, VDOUB& u) {
                 int idx = (i - 1) * b.Nz + (k - 1);
                 b.bottom_send[idx] = u[b.local_index(i, 1, k)];
             }
-        MPI_Irecv(b.bottom_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.bottom_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_top, MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.bottom_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_bottom, MPI_COMM_WORLD, &req[nreq++]);
     }
     
@@ -65,10 +65,10 @@ void exchange_halos(Block& b, VDOUB& u) {
                 b.top_send[idx] = u[b.local_index(i, b.Ny, k)];
             }
         MPI_Irecv(b.top_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_bottom, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_top, MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    // Z axis - граничные условия первого рода
+    // Z axis
     if (b.neighbors[4] != -1) { // front (z-)
         #pragma omp parallel for collapse(2)
         for (int i = 1; i <= b.Nx; ++i)
@@ -76,7 +76,7 @@ void exchange_halos(Block& b, VDOUB& u) {
                 int idx = (i - 1) * b.Ny + (j - 1);
                 b.front_send[idx] = u[b.local_index(i, j, 1)];
             }
-        MPI_Irecv(b.front_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Irecv(b.front_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_back, MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.front_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_front, MPI_COMM_WORLD, &req[nreq++]);
     }
     
@@ -88,14 +88,14 @@ void exchange_halos(Block& b, VDOUB& u) {
                 b.back_send[idx] = u[b.local_index(i, j, b.Nz)];
             }
         MPI_Irecv(b.back_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_front, MPI_COMM_WORLD, &req[nreq++]);
-        MPI_Isend(b.back_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
+        MPI_Isend(b.back_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_back, MPI_COMM_WORLD, &req[nreq++]);
     }
     
     if (nreq > 0) {
         MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
     }
     
-    // Распаковка recv в halo (параллельно)
+    // Распаковка полученных данных в гало-зоны
     if (b.neighbors[0] != -1) {
         #pragma omp parallel for collapse(2)
         for (int j = 1; j <= b.Ny; ++j)
@@ -152,7 +152,7 @@ void exchange_halos(Block& b, VDOUB& u) {
 }
 
 void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
-    // Граничные условия первого рода по X
+    // Только для условий первого рода по X
     if (b.x_start == 0) {
         #pragma omp parallel for collapse(2)
         for (int j = 0; j <= b.Ny + 1; ++j)
@@ -167,7 +167,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(b.Nx + 1, j, k)] = 0.0;
     }
     
-    // Граничные условия первого рода по Z
+    // Только для условий первого рода по Z
     if (b.z_start == 0) {
         #pragma omp parallel for collapse(2)
         for (int i = 0; i <= b.Nx + 1; ++i)
@@ -182,8 +182,8 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(i, j, b.Nz + 1)] = 0.0;
     }
     
-    // Для периодических условий по Y мы НЕ устанавливаем фиксированные значения на границах
-    // Периодичность обеспечивается через обмен гало-зонами
+    // НИКАКИХ СПЕЦИАЛЬНЫХ ДЕЙСТВИЙ ДЛЯ Y!
+    // Периодические условия полностью обеспечиваются обменом гало-зонами
 }
 
 void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_first) {
@@ -215,7 +215,7 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_fir
     exchange_halos(b, u[0]);
     exchange_halos(b, u[1]);
     
-    // Применение граничных условий
+    // Применение граничных условий (только для X и Z)
     apply_boundary_conditions(g, b, u[0], 0.0);
     apply_boundary_conditions(g, b, u[1], g.tau);
     
@@ -252,7 +252,7 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
         int next = step % 3;
         double t = step * g.tau;
         
-        // Вычисление внутренних точек
+        // 1. Вычисление внутренних точек
         #pragma omp parallel for collapse(3)
         for (int i = 1; i <= b.Nx; ++i) {
             for (int j = 1; j <= b.Ny; ++j) {
@@ -264,13 +264,13 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
             }
         }
         
-        // Обмен гало-зонами
+        // 2. Обмен гало-зонами
         exchange_halos(b, u[next]);
         
-        // Применение граничных условий
+        // 3. Применение граничных условий (только для X и Z)
         apply_boundary_conditions(g, b, u[next], t);
         
-        // Вычисление погрешности на текущем шаге
+        // 4. Вычисление погрешности
         double local_max_error = 0.0;
         #pragma omp parallel for collapse(3) reduction(max : local_max_error)
         for (int i = 1; i <= b.Nx; ++i) {

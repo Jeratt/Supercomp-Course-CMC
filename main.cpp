@@ -6,59 +6,38 @@
 #include <cmath>
 #include <mpi.h>
 #include <omp.h>
-#include <algorithm>
 using namespace std;
 
 double parse_length(const string& arg, string& label_part) {
-    // Приводим к нижнему регистру для надежности сравнения
-    string lower_arg = arg;
-    transform(lower_arg.begin(), lower_arg.end(), lower_arg.begin(), ::tolower);
-    
-    if (lower_arg == "pi") {
+    if (arg == "pi") {
         label_part = "pi";
         return M_PI;
     } else {
         label_part = arg;
-        try {
-            return stod(arg);
-        } catch (...) {
-            cerr << "Invalid length parameter: " << arg << endl;
-            MPI_Abort(MPI_COMM_WORLD, 1);
-            return 1.0; // never reached
-        }
+        return stod(arg);
     }
 }
 
+// Упрощенная функция определения размеров для разбиения между процессами
 void determine_dimensions(int proc_num, int dims[3]) {
-    // Для варианта 3 приоритет отдается разбиению по Y (периодическое направление)
-    dims[0] = 1; // X dimension
-    dims[1] = 1; // Y dimension (periodic)
-    dims[2] = 1; // Z dimension
-    
-    // Находим оптимальное разбиение с приоритетом по Y
-    int best_diff = 1000;
-    int best_dims[3] = {1, 1, proc_num}; // По умолчанию все процессы в Z
-    
-    for (int i = 1; i <= proc_num; ++i) {
-        if (proc_num % i != 0) continue;
-        int remaining = proc_num / i;
-        for (int j = 1; j <= remaining; ++j) {
-            if (remaining % j != 0) continue;
-            int k = remaining / j;
-            
-            int current_diff = abs(i - 1) + abs(k - 1); // Стремимся к балансу по X и Z
-            if (current_diff < best_diff) {
-                best_diff = current_diff;
-                best_dims[0] = i;
-                best_dims[1] = j;
-                best_dims[2] = k;
-            }
-        }
+    // Для варианта 3 (1Р, П, 1Р) разбиваем преимущественно по X и Z
+    switch(proc_num) {
+        case 4:
+            dims[0] = 2;  // X
+            dims[1] = 1;  // Y (периодическое направление - минимальное разбиение)
+            dims[2] = 2;  // Z
+            break;
+        case 8:
+            dims[0] = 2;  // X
+            dims[1] = 2;  // Y
+            dims[2] = 2;  // Z
+            break;
+        default:
+            // Для других случаев используем простейшую стратегию
+            dims[0] = 1;
+            dims[1] = proc_num;
+            dims[2] = 1;
     }
-    
-    dims[0] = best_dims[0];
-    dims[1] = best_dims[1];
-    dims[2] = best_dims[2];
 }
 
 int main(int argc, char* argv[]) {
@@ -67,7 +46,7 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &np);
     
-    // argc должно быть равно 7: имя программы, N, num_threads, type, Lx, Ly, Lz
+    // argc должно быть равно 6: имя программы, N, num_threads, Lx, Ly, Lz
     if (argc != 6) {
         if (rank == 0) {
             cerr << "Usage: mpirun -np NPROC ./wave3d_combo N num_threads Lx Ly Lz" << endl
@@ -110,6 +89,7 @@ int main(int argc, char* argv[]) {
     int dims[3];
     determine_dimensions(np, dims);
     int periods[3] = {0, 1, 0}; // Периодичность только по Y
+    
     if (rank == 0) {
         cout << "Chosen 3D topology: (" << dims[0] << ", " << dims[1] << ", " << dims[2] << ")" << endl
              << "Periodicity: x=" << periods[0] << ", y=" << periods[1] << ", z=" << periods[2] << endl;
