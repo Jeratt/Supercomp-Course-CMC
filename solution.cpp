@@ -5,7 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
-#include <omp.h>   // OpenMP
+#include <omp.h>
 using namespace std;
 
 inline double laplace_operator(const Grid& g, const Block& b, const VDOUB& u, int i, int j, int k) {
@@ -22,7 +22,7 @@ void exchange_halos(Block& b, VDOUB& u) {
     MPI_Request req[12];
     int nreq = 0;
     
-    // X axis -> пакуем в send буферы (параллелим упаковку)
+    // X axis - граничные условия первого рода
     if (b.neighbors[0] != -1) { // left neighbor exists
         #pragma omp parallel for collapse(2)
         for (int j = 1; j <= b.Ny; ++j)
@@ -45,7 +45,7 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Isend(b.right_send.data(), b.Ny * b.Nz, MPI_DOUBLE, b.neighbors[1], tag_right,  MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    // Y axis -> periodic (pack)
+    // Y axis - периодические условия
     if (b.neighbors[2] != -1) { // bottom (y-)
         #pragma omp parallel for collapse(2)
         for (int i = 1; i <= b.Nx; ++i)
@@ -68,7 +68,7 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    // Z axis -> pack
+    // Z axis - граничные условия первого рода
     if (b.neighbors[4] != -1) { // front (z-)
         #pragma omp parallel for collapse(2)
         for (int i = 1; i <= b.Nx; ++i)
@@ -91,7 +91,9 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Isend(b.back_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[5], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
+    if (nreq > 0) {
+        MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
+    }
     
     // Распаковка recv в halo (параллельно)
     if (b.neighbors[0] != -1) {
@@ -149,26 +151,8 @@ void exchange_halos(Block& b, VDOUB& u) {
     }
 }
 
-void enforce_periodic_y(const Grid& g, Block& b, VDOUB& u) {
-    bool is_y_min_block = (b.y_start == 0);
-    bool is_y_max_block = (b.y_end == g.N);
-    
-    if (is_y_min_block && b.neighbors[3] != -1) {
-        #pragma omp parallel for collapse(2)
-        for (int i = 0; i <= b.Nx + 1; ++i)
-            for (int k = 0; k <= b.Nz + 1; ++k)
-                u[b.local_index(i, 0, k)] = u[b.local_index(i, b.Ny + 1, k)];
-    }
-    
-    if (is_y_max_block && b.neighbors[2] != -1) {
-        #pragma omp parallel for collapse(2)
-        for (int i = 0; i <= b.Nx + 1; ++i)
-            for (int k = 0; k <= b.Nz + 1; ++k)
-                u[b.local_index(i, b.Ny + 1, k)] = u[b.local_index(i, 0, k)];
-    }
-}
-
 void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
+    // Граничные условия первого рода по X
     if (b.x_start == 0) {
         #pragma omp parallel for collapse(2)
         for (int j = 0; j <= b.Ny + 1; ++j)
@@ -183,6 +167,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(b.Nx + 1, j, k)] = 0.0;
     }
     
+    // Граничные условия первого рода по Z
     if (b.z_start == 0) {
         #pragma omp parallel for collapse(2)
         for (int i = 0; i <= b.Nx + 1; ++i)
@@ -197,25 +182,8 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(i, j, b.Nz + 1)] = 0.0;
     }
     
-    if (b.y_start == 0) {
-        #pragma omp parallel for collapse(2)
-        for (int i = 0; i <= b.Nx + 1; ++i)
-            for (int k = 0; k <= b.Nz + 1; ++k) {
-                double x = (b.x_start + i - 1) * g.h_x;
-                double z = (b.z_start + k - 1) * g.h_z;
-                u[b.local_index(i, 0, k)] = u_analytical(g, x, 0.0, z, t);
-            }
-    }
-    
-    if (b.y_end == g.N) {
-        #pragma omp parallel for collapse(2)
-        for (int i = 0; i <= b.Nx + 1; ++i)
-            for (int k = 0; k <= b.Nz + 1; ++k) {
-                double x = (b.x_start + i - 1) * g.h_x;
-                double z = (b.z_start + k - 1) * g.h_z;
-                u[b.local_index(i, b.Ny + 1, k)] = u_analytical(g, x, g.Ly, z, t);
-            }
-    }
+    // Для периодических условий по Y мы НЕ устанавливаем фиксированные значения на границах
+    // Периодичность обеспечивается через обмен гало-зонами
 }
 
 void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_first) {
@@ -243,34 +211,15 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_fir
         }
     }
     
-    // --- boundary points from analytical ---
-    #pragma omp parallel for collapse(3)
-    for (int i = 0; i <= b.Nx + 1; ++i) {
-        for (int j = 0; j <= b.Ny + 1; ++j) {
-            for (int k = 0; k <= b.Nz + 1; ++k) {
-                if (i >= 1 && i <= b.Nx && j >= 1 && j <= b.Ny && k >= 1 && k <= b.Nz)
-                    continue;
-                double x = (b.x_start + i - 1) * g.h_x;
-                double y = (b.y_start + j - 1) * g.h_y;
-                double z = (b.z_start + k - 1) * g.h_z;
-                u[1][b.local_index(i, j, k)] = u_analytical(g, x, y, z, g.tau);
-            }
-        }
-    }
-    
-    // exchange halos
+    // Обмен гало-зонами
     exchange_halos(b, u[0]);
     exchange_halos(b, u[1]);
     
-    // periodic y
-    enforce_periodic_y(g, b, u[0]);
-    enforce_periodic_y(g, b, u[1]);
-    
-    // boundary conditions
+    // Применение граничных условий
     apply_boundary_conditions(g, b, u[0], 0.0);
     apply_boundary_conditions(g, b, u[1], g.tau);
     
-    // compute error on u1
+    // Вычисление погрешности на первом шаге
     double local_max_error = 0.0;
     #pragma omp parallel for collapse(3) reduction(max : local_max_error)
     for (int i = 1; i <= b.Nx; ++i) {
@@ -288,7 +237,7 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_fir
     
     double global_max_error;
     MPI_Allreduce(&local_max_error, &global_max_error, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-    max_inacc = max(max_inacc, global_max_error);
+    max_inacc = global_max_error;
     inacc_first = global_max_error;
     
     if (b.rank == 0)
@@ -297,13 +246,13 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_fir
 
 void run_algo(const Grid& g, Block& b, VVEC& u,
               double& max_inacc, double& last_step_inaccuracy) {
-    for (int step = 2; step < TIME_STEPS; ++step) {
+    for (int step = 2; step <= TIME_STEPS; ++step) {
         int prev = (step - 2) % 3;
         int curr = (step - 1) % 3;
         int next = step % 3;
         double t = step * g.tau;
         
-        // 1. internal points (parallel)
+        // Вычисление внутренних точек
         #pragma omp parallel for collapse(3)
         for (int i = 1; i <= b.Nx; ++i) {
             for (int j = 1; j <= b.Ny; ++j) {
@@ -315,31 +264,13 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
             }
         }
         
-        // 2. exchange halos for next
+        // Обмен гало-зонами
         exchange_halos(b, u[next]);
         
-        // 3. boundary points from analytical
-        #pragma omp parallel for collapse(3)
-        for (int i = 0; i <= b.Nx + 1; ++i) {
-            for (int j = 0; j <= b.Ny + 1; ++j) {
-                for (int k = 0; k <= b.Nz + 1; ++k) {
-                    if (i >= 1 && i <= b.Nx && j >= 1 && j <= b.Ny && k >= 1 && k <= b.Nz)
-                        continue;
-                    double x = (b.x_start + i - 1) * g.h_x;
-                    double y = (b.y_start + j - 1) * g.h_y;
-                    double z = (b.z_start + k - 1) * g.h_z;
-                    u[next][b.local_index(i, j, k)] = u_analytical(g, x, y, z, t);
-                }
-            }
-        }
-        
-        // 4. periodic y
-        enforce_periodic_y(g, b, u[next]);
-        
-        // 5. boundary conditions
+        // Применение граничных условий
         apply_boundary_conditions(g, b, u[next], t);
         
-        // 6. compute inaccuracy
+        // Вычисление погрешности на текущем шаге
         double local_max_error = 0.0;
         #pragma omp parallel for collapse(3) reduction(max : local_max_error)
         for (int i = 1; i <= b.Nx; ++i) {
@@ -357,12 +288,13 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
         
         double global_max_error;
         MPI_Allreduce(&local_max_error, &global_max_error, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        
         if (global_max_error > max_inacc)
             max_inacc = global_max_error;
-        
-        if (step == TIME_STEPS - 1)
+            
+        if (step == TIME_STEPS)
             last_step_inaccuracy = global_max_error;
-        
+            
         if (b.rank == 0)
             cout << "Max inaccuracy on step " << step << " : " << global_max_error << endl;
     }
@@ -400,6 +332,6 @@ void solve_mpi(const Grid& g, Block& b,
         for (int j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k) {
                 int idx = (i - 1) * b.Ny * b.Nz + (j - 1) * b.Nz + (k - 1);
-                result[idx] = u[(TIME_STEPS - 1) % 3][b.local_index(i, j, k)];
+                result[idx] = u[TIME_STEPS % 3][b.local_index(i, j, k)];
             }
 }

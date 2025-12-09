@@ -5,11 +5,11 @@
 #include <iostream>
 #include <mpi.h>
 #include <string>
+#include <algorithm>
 typedef std::vector<std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
 typedef std::vector<VDOUB> VVEC;
 #define TIME_STEPS 20  // 20 временных шагов
-
 class Grid {
 public:
     int N;
@@ -22,13 +22,14 @@ public:
         h_z = Lz / N;
         a2 = 0.25;  // задано в варианте 3
         // Для устойчивости (условие Куранта): τ ≤ h_min / (a * sqrt(3))
-        tau = 0.00005;  // безопасное значение для N от 128 до 512 (как было)
+        double h_min = std::min({h_x, h_y, h_z});
+        double a = std::sqrt(a2);
+        tau = 0.9 * h_min / (a * std::sqrt(3.0)); // запас 10% для устойчивости
     }
     inline int index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
     }
 };
-
 class Block {
 public:
     int rank;
@@ -38,10 +39,9 @@ public:
     std::vector<double> left_send, left_recv, right_send, right_recv;
     std::vector<double> bottom_send, bottom_recv, top_send, top_recv;
     std::vector<double> front_send, front_recv, back_send, back_recv;
-    
     Block(const Grid& g, const std::vector<int>& nb, const int coords[3],
           int dimx, int dimy, int dimz, int r) : rank(r), neighbors(nb) {
-        // Расчёт локальных границ блока (как в исходном)
+        // Расчёт локальных границ блока
         x_start = coords[0] * (g.N / dimx);
         x_end = (coords[0] + 1) * (g.N / dimx);
         if (coords[0] == dimx - 1) x_end = g.N;
@@ -69,12 +69,10 @@ public:
         front_send.resize(xy_size); front_recv.resize(xy_size);
         back_send.resize(xy_size); back_recv.resize(xy_size);
     }
-    
     inline int local_index(int i, int j, int k) const {
         return ((i) * padded_Ny + (j)) * padded_Nz + (k);
     }
 };
-
 inline double u_analytical(const Grid& g, double x, double y, double z, double t) {
     double at = (M_PI / 2.0) * std::sqrt(1.0 / (g.Lx * g.Lx) + 4.0 / (g.Ly * g.Ly) + 9.0 / (g.Lz * g.Lz));
     return std::sin(M_PI * x / g.Lx)
@@ -82,7 +80,6 @@ inline double u_analytical(const Grid& g, double x, double y, double z, double t
          * std::sin(3.0 * M_PI * z / g.Lz)
          * std::cos(at * t);
 }
-
 void solve_mpi(const Grid& g, Block& b,
                int dimx, int dimy, int dimz,
                MPI_Comm comm_cart,
