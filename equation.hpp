@@ -10,7 +10,7 @@ typedef std::vector<std::vector<double>> VDOUB2D;
 typedef std::vector<double> VDOUB;
 typedef std::vector<VDOUB> VVEC;
 
-#define TIME_STEPS 20  // 20 временных шагов
+#define TIME_STEPS 20
 
 class Grid {
 public:
@@ -22,9 +22,8 @@ public:
         h_x = Lx / N;
         h_y = Ly / N;
         h_z = Lz / N;
-        a2 = 0.25;  // задано в варианте 3
-        // Для устойчивости (условие Куранта): τ ≤ h_min / (a * sqrt(3))
-        tau = 0.00005;  // безопасное значение для N от 128 до 512
+        a2 = 0.25;
+        tau = 0.00005;
     }
     inline int index(int i, int j, int k) const {
         return (i * (N + 1) + j) * (N + 1) + k;
@@ -42,7 +41,6 @@ public:
 
     Block(const Grid& g, const std::vector<int>& nb, const int coords[3], 
           int dimx, int dimy, int dimz, int r) : neighbors(nb), rank(r) {
-        // Расчет локальных границ блока
         x_start = coords[0] * (g.N / dimx);
         x_end = (coords[0] + 1) * (g.N / dimx);
         if (coords[0] == dimx - 1) x_end = g.N;
@@ -59,12 +57,10 @@ public:
         Ny = y_end - y_start;
         Nz = z_end - z_start;
         
-        // Размеры с учетом гало-зон (1 слой с каждой стороны)
         padded_Nx = Nx + 2;
         padded_Ny = Ny + 2;
         padded_Nz = Nz + 2;
         
-        // Инициализация буферов для обмена гало-зонами
         int yz_size = Ny * Nz;
         int xz_size = Nx * Nz;
         int xy_size = Nx * Ny;
