@@ -86,6 +86,8 @@ inline double u_analytical(const Grid& g, double x, double y, double z, double t
          * std::cos(at * t);
 }
 
+void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t);
+
 void solve_mpi(const Grid& g, Block& b,
                int dimx, int dimy, int dimz,
                MPI_Comm comm_cart,
