@@ -105,7 +105,7 @@ void exchange_halos(Block& b, VDOUB& u) {
 
 
 void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
-    // x - условия первого рода
+    // X axis -> first order
     if (b.x_start == 0) {
         for (int j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k)
@@ -117,7 +117,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(b.Nx + 1, j, k)] = 0.0;
     }
 
-    // z - условия первого рода
+    // Z axis -> first order
     if (b.z_start == 0) {
         for (int i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j)
@@ -129,7 +129,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(i, j, b.Nz + 1)] = 0.0;
     }
 
-    // y - периодические условия (аналитическое задание на физических границах)
+    // Y axis -> periodic
     if (b.y_start == 0) {
         for (int i = 1; i <= b.Nx; ++i) {
             double x = (b.x_start + i - 1) * g.h_x;
@@ -242,9 +242,8 @@ void solve_mpi(const Grid& g, Block& b,
     
     max_inaccuracy = 0.0;
     init(g, b, u);
-    // Вычисляем first_step_inaccuracy после инициализации u[1]
     double local_first_err = 0.0;
-    double t = g.tau; // время для первого шага
+    double t = g.tau;
     for (int i = 1; i <= b.Nx; ++i) {
         double x = (b.x_start + i - 1) * g.h_x;
         for (int j = 1; j <= b.Ny; ++j) {
@@ -267,7 +266,6 @@ void solve_mpi(const Grid& g, Block& b,
     
     time = end_time - start_time;
     
-    // Копируем результат для внутренних точек
     result.resize(b.Nx * b.Ny * b.Nz);
     for (int i = 1; i <= b.Nx; ++i)
         for (int j = 1; j <= b.Ny; ++j)

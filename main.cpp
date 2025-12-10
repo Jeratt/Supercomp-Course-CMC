@@ -18,15 +18,12 @@ double parse_length(const string& arg, string& label_part) {
 }
 
 void determine_dimensions(int proc_num, int dims[3]) {
-    // Для варианта 3 приоритет отдается разбиению по Y (периодическое направление)
-    dims[0] = 1; // X dimension
-    dims[1] = 1; // Y dimension (periodic)
-    dims[2] = 1; // Z dimension
+    dims[0] = 1; // X
+    dims[1] = 1; // Y
+    dims[2] = 1; // Z
     
-    // Пытаемся найти оптимальное разбиение
     int remaining = proc_num;
     
-    // Сначала пытаемся разбить по Y (периодическое направление)
     for (int i = static_cast<int>(sqrt(proc_num)); i >= 1; --i) {
         if (proc_num % i == 0) {
             dims[1] = i;
@@ -35,7 +32,6 @@ void determine_dimensions(int proc_num, int dims[3]) {
         }
     }
     
-    // Затем разбиваем оставшееся по X и Z
     for (int i = static_cast<int>(sqrt(remaining)); i >= 1; --i) {
         if (remaining % i == 0) {
             dims[0] = i;
@@ -44,7 +40,6 @@ void determine_dimensions(int proc_num, int dims[3]) {
         }
     }
     
-    // Проверка корректности разбиения
     if (dims[0] * dims[1] * dims[2] != proc_num) {
         dims[0] = 1;
         dims[1] = 1;
