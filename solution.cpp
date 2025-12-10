@@ -227,8 +227,8 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_fir
     exchange_halos(b, u[1]);
     
     // --- Шаг 5: Принудительно обеспечиваем периодичность по y ---
-    // enforce_periodic_y(g, b, u[0]);
-    // enforce_periodic_y(g, b, u[1]);
+    enforce_periodic_y(g, b, u[0]);
+    enforce_periodic_y(g, b, u[1]);
     
     // --- Шаг 6: Применяем граничные условия 1-го рода ---
     apply_boundary_conditions(g, b, u[0], 0.0);
@@ -298,7 +298,7 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
         }
         
         // --- 4. Принудительно обеспечиваем ПЕРИОДИЧНОСТЬ по y ---
-        // enforce_periodic_y(g, b, u[next]);
+        enforce_periodic_y(g, b, u[next]);
         
         // --- 5. Применяем граничные условия 1-го рода ---
         apply_boundary_conditions(g, b, u[next], t);
