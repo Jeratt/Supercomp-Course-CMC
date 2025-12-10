@@ -21,7 +21,7 @@ void exchange_halos(Block& b, VDOUB& u) {
     MPI_Request req[12];
     int nreq = 0;
     
-    // X axis -> first order (Dirichlet boundaries)
+    // X axis -> first order
     if (b.neighbors[0] != -1) { // left neighbor exists
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -38,14 +38,14 @@ void exchange_halos(Block& b, VDOUB& u) {
     }
     
     // Y axis -> periodic
-    if (b.neighbors[2] != -1) { // bottom (y-)
+    if (b.neighbors[2] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 b.bottom_send[idx] = u[b.local_index(i, 1, k)];
         MPI_Irecv(b.bottom_recv.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.bottom_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[2], tag_bottom, MPI_COMM_WORLD, &req[nreq++]);
     }
-    if (b.neighbors[3] != -1) { // top (y+)
+    if (b.neighbors[3] != -1) { 
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
                 b.top_send[idx] = u[b.local_index(i, b.Ny, k)];
@@ -53,15 +53,15 @@ void exchange_halos(Block& b, VDOUB& u) {
         MPI_Isend(b.top_send.data(), b.Nx * b.Nz, MPI_DOUBLE, b.neighbors[3], tag_top,    MPI_COMM_WORLD, &req[nreq++]);
     }
     
-    // Z axis -> first order (Dirichlet boundaries)
-    if (b.neighbors[4] != -1) { // front (z-)
+    // Z axis -> first order
+    if (b.neighbors[4] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
                 b.front_send[idx] = u[b.local_index(i, j, 1)];
         MPI_Irecv(b.front_recv.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_back,  MPI_COMM_WORLD, &req[nreq++]);
         MPI_Isend(b.front_send.data(), b.Nx * b.Ny, MPI_DOUBLE, b.neighbors[4], tag_front, MPI_COMM_WORLD, &req[nreq++]);
     }
-    if (b.neighbors[5] != -1) { // back (z+)
+    if (b.neighbors[5] != -1) {
         for (int idx = 0, i = 1; i <= b.Nx; ++i)
             for (int j = 1; j <= b.Ny; ++j, ++idx)
                 b.back_send[idx] = u[b.local_index(i, j, b.Nz)];
@@ -71,7 +71,6 @@ void exchange_halos(Block& b, VDOUB& u) {
     
     MPI_Waitall(nreq, req, MPI_STATUSES_IGNORE);
     
-    // Заполнение гало-зон полученными значениями
     if (b.neighbors[0] != -1) {
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
             for (int k = 1; k <= b.Nz; ++k, ++idx)
@@ -228,8 +227,8 @@ void init(const Grid& g, Block& b, VVEC& u, double& max_inacc, double& inacc_fir
     exchange_halos(b, u[1]);
     
     // --- Шаг 5: Принудительно обеспечиваем периодичность по y ---
-    enforce_periodic_y(g, b, u[0]);
-    enforce_periodic_y(g, b, u[1]);
+    // enforce_periodic_y(g, b, u[0]);
+    // enforce_periodic_y(g, b, u[1]);
     
     // --- Шаг 6: Применяем граничные условия 1-го рода ---
     apply_boundary_conditions(g, b, u[0], 0.0);
@@ -299,7 +298,7 @@ void run_algo(const Grid& g, Block& b, VVEC& u,
         }
         
         // --- 4. Принудительно обеспечиваем ПЕРИОДИЧНОСТЬ по y ---
-        enforce_periodic_y(g, b, u[next]);
+        // enforce_periodic_y(g, b, u[next]);
         
         // --- 5. Применяем граничные условия 1-го рода ---
         apply_boundary_conditions(g, b, u[next], t);
