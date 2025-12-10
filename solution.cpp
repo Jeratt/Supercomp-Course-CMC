@@ -21,12 +21,6 @@ void exchange_halos(Block& b, VDOUB& u) {
     MPI_Request req[12];
     int nreq = 0;
 
-    exchange_halos(b, u[0]);
-    apply_boundary_conditions(g, b, u[0], 0.0);
-
-    exchange_halos(b, u[1]);
-    apply_boundary_conditions(g, b, u[1], g.tau);
-    
     // X axis -> first order
     if (b.neighbors[0] != -1) { // left neighbor exists
         for (int idx = 0, j = 1; j <= b.Ny; ++j)
@@ -247,7 +241,24 @@ void solve_mpi(const Grid& g, Block& b,
     start_time = MPI_Wtime();
     
     max_inaccuracy = 0.0;
-    init(g, b, u, max_inaccuracy, first_step_inaccuracy);
+    init(g, b, u);
+    // Вычисляем first_step_inaccuracy после инициализации u[1]
+    double local_first_err = 0.0;
+    double t = g.tau; // время для первого шага
+    for (int i = 1; i <= b.Nx; ++i) {
+        double x = (b.x_start + i - 1) * g.h_x;
+        for (int j = 1; j <= b.Ny; ++j) {
+            double y = (b.y_start + j - 1) * g.h_y;
+            for (int k = 1; k <= b.Nz; ++k) {
+                double z = (b.z_start + k - 1) * g.h_z;
+                double exact = u_analytical(g, x, y, z, t);
+                double err = fabs(u[1][b.local_index(i, j, k)] - exact);
+                if (err > local_first_err) local_first_err = err;
+            }
+        }
+    }
+    MPI_Allreduce(&local_first_err, &first_step_inaccuracy, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+
     run_algo(g, b, u, max_inaccuracy, last_step_inaccuracy);
     
     double end_time;
