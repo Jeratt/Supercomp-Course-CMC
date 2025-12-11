@@ -1,19 +1,12 @@
 #!/bin/bash
-# Запуск гибридной MPI+OpenMP версии на IBM Polus через mpisubmit.pl
-# Требуемые конфигурации согласно Таблице 4 из задания:
-# - Число MPI процессов: 4, 8
-# - Число OpenMP нитей: 1, 2, 4, 8
-# - Размеры сетки: 128^3, 256^3
-# - Типы области: L=1 и L=pi
 
 set -e
 
 if [ ! -f ./wave3d_combo ]; then
-    echo "Error: ./wave3d_combo not found. Run 'make compile_polus' first."
+    echo "Error: ./wave3d_combo not found. Run 'make' first."
     exit 1
 fi
 
-# Конфигурации для запуска согласно Таблице 4
 declare -a mpi_procs=(4 8)
 declare -a omp_threads=(1 2 4 8)
 declare -a grid_sizes=(128 256)
@@ -29,13 +22,11 @@ for N in "${grid_sizes[@]}"; do
                     L_ARGS=("pi" "pi" "pi")
                 fi
                 
-                # Формируем имя файла для вывода
                 OUT_FILE="stats_mpi_omp_${N}_${np}_${nt}_${type}.out"
                 ERR_FILE="stats_mpi_omp_${N}_${np}_${nt}_${type}.err"
                 
                 echo "Submitting: N=$N, MPI processes=$np, OpenMP threads=$nt, L=$type"
                 
-                # Запускаем задачу через mpisubmit.pl
                 mpisubmit.pl \
                     -p "$np" \
                     -t "$nt" \
