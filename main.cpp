@@ -18,22 +18,19 @@ double parse_length(const string& arg, string& label_part) {
     }
 }
 
-// Упрощенная функция определения размеров для разбиения между процессами
 void determine_dimensions(int proc_num, int dims[3]) {
-    // Для варианта 3 (1Р, П, 1Р) разбиваем преимущественно по X и Z
     switch(proc_num) {
         case 4:
-            dims[0] = 2;  // X
-            dims[1] = 1;  // Y (периодическое направление - минимальное разбиение)
-            dims[2] = 2;  // Z
+            dims[0] = 2;
+            dims[1] = 1;
+            dims[2] = 2;
             break;
         case 8:
-            dims[0] = 2;  // X
-            dims[1] = 2;  // Y
-            dims[2] = 2;  // Z
+            dims[0] = 2;
+            dims[1] = 2;
+            dims[2] = 2;
             break;
         default:
-            // Для других случаев используем простейшую стратегию
             dims[0] = 1;
             dims[1] = proc_num;
             dims[2] = 1;
@@ -61,7 +58,6 @@ int main(int argc, char* argv[]) {
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     
-    // Устанавливаем число потоков OpenMP из аргумента командной строки
     int num_threads = stoi(argv[2]);
     if (num_threads <= 0) {
         if (rank == 0) cerr << "Number of threads must be positive." << endl;
@@ -109,8 +105,7 @@ int main(int argc, char* argv[]) {
     
     VDOUB result;
     double time = 0, max_inacc = 0, first_inacc = 0, last_inacc = 0;
-    solve_mpi(grid, block, dims[0], dims[1], dims[2], comm_cart,
-              time, max_inacc, first_inacc, last_inacc, result);
+    solve_mpi(grid, block, time, max_inacc, first_inacc, last_inacc, result);
     
     if (rank == 0) {
         cout << "=== RESULT ===" << endl

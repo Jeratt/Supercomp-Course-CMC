@@ -91,9 +91,7 @@ inline double u_analytical(const Grid& g, double x, double y, double z, double t
          * std::cos(at * t);
 }
 
-void solve_mpi(const Grid& g, Block& b,
-               int dimx, int dimy, int dimz,
-               MPI_Comm comm_cart,
+void solve_mpi(const Grid& grid, Block& block,
                double& time,
                double& max_inaccuracy,
                double& first_step_inaccuracy,
