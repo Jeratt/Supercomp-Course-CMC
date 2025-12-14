@@ -151,6 +151,7 @@ void exchange_halos(Block& b, VDOUB& u) {
 }
 
 void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
+    // X axis -> first order
     if (b.x_start == 0) {
         #pragma omp parallel for collapse(2)
         for (int j = 0; j <= b.Ny + 1; ++j)
@@ -165,6 +166,7 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(b.Nx + 1, j, k)] = 0.0;
     }
     
+    // Z axis -> first order
     if (b.z_start == 0) {
         #pragma omp parallel for collapse(2)
         for (int i = 0; i <= b.Nx + 1; ++i)
@@ -179,21 +181,23 @@ void apply_boundary_conditions(const Grid& g, Block& b, VDOUB& u, double t) {
                 u[b.local_index(i, j, b.Nz + 1)] = 0.0;
     }
     
+    // Y axis -> periodic
     if (b.y_start == 0) {
         #pragma omp parallel for collapse(2)
-        for (int i = 1; i <= b.Nx; ++i) {
+        for (int i = 0; i <= b.Nx + 1; ++i) {
             double x = (b.x_start + i - 1) * g.h_x;
-            for (int k = 1; k <= b.Nz; ++k) {
+            for (int k = 0; k <= b.Nz + 1; ++k) {
                 double z = (b.z_start + k - 1) * g.h_z;
                 u[b.local_index(i, 0, k)] = u_analytical(g, x, 0.0, z, t);
             }
         }
     }
+    
     if (b.y_end == g.N) {
-   	#pragma omp parallel for collapse(2)
-        for (int i = 1; i <= b.Nx; ++i) {
+        #pragma omp parallel for collapse(2)
+        for (int i = 0; i <= b.Nx + 1; ++i) {
             double x = (b.x_start + i - 1) * g.h_x;
-            for (int k = 1; k <= b.Nz; ++k) {
+            for (int k = 0; k <= b.Nz + 1; ++k) {
                 double z = (b.z_start + k - 1) * g.h_z;
                 u[b.local_index(i, b.Ny + 1, k)] = u_analytical(g, x, g.Ly, z, t);
             }
