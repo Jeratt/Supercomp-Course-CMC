@@ -4,5 +4,5 @@ CC_POL = g++
 TARGET = wave3d
 SOURCES = main.cpp solution.cpp
 
-compile_polus: create_result_dir
+compile_polus:
 	$(CC_POL) $(CFLAGS) $(SOURCES) -o $(TARGET)

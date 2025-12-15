@@ -23,12 +23,7 @@ for N in 128 256 512; do
             ERR_FILE="stats_${N}_${threads}_${L_LABEL}.err"
 
             echo "Submitting: N=$N, threads=$threads, L=$L_LABEL"
-            bsub -n 1 \
-                 -q short \
-                 -W 00:30 \
-                 -J "$JOB_NAME" \мальном числе сокето
-                 -o "$OUT_FILE" \
-                 -e "$ERR_FILE" \
+            bsub -n 1 -q short -W 00:30 -J "$JOB_NAME" -o "$OUT_FILE" -e "$ERR_FILE" \
                  -R "affinity[core(10,same=socket,exclusive=(socket,alljobs)):membind=localonly:distribute=pack(socket=1)]" \
                  ./wave3d $N $threads $L_ARGS
         done

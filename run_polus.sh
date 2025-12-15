@@ -2,37 +2,41 @@
 
 set -e
 
-if [ ! -f ./wave3d ]; then
-    echo "Error: ./wave3d not found. Run make first."
+if [ ! -f ./wave3d_combo ]; then
+    echo "Error: ./wave3d_combo not found. Run 'make' first."
     exit 1
 fi
 
-for N in 128 256 512; do
-    for type in "1.0_1.0_1.0" "pi_pi_pi"; do
-        if [[ "$type" == "1.0_1.0_1.0" ]]; then
-            L_ARGS="1.0 1.0 1.0"
-            L_LABEL="1"
-        else
-            L_ARGS="pi pi pi"
-            L_LABEL="pi"
-        fi
+declare -a mpi_procs=(4 8)
+declare -a omp_threads=(1 2 4 8)
+declare -a grid_sizes=(128 256)
+declare -a domain_types=("1" "pi")
 
-        for threads in 1 2 4 8 16 32; do
-            JOB_NAME="omp_job_${N}_${threads}_${L_LABEL}"
-            OUT_FILE="stats_${N}_${threads}_${L_LABEL}.out"
-            ERR_FILE="stats_${N}_${threads}_${L_LABEL}.err"
-
-            echo "Submitting: N=$N, threads=$threads, L=$L_LABEL"
-            bsub -n 1 \
-                 -q short \
-                 -W 00:30 \
-                 -J "$JOB_NAME" \мальном числе сокето
-                 -o "$OUT_FILE" \
-                 -e "$ERR_FILE" \
-                 -R "affinity[core(10,same=socket,exclusive=(socket,alljobs)):membind=localonly:distribute=pack(socket=1)]" \
-                 ./wave3d $N $threads $L_ARGS
+for N in "${grid_sizes[@]}"; do
+    for np in "${mpi_procs[@]}"; do
+        for nt in "${omp_threads[@]}"; do
+            for type in "${domain_types[@]}"; do
+                if [ "$type" == "1" ]; then
+                    L_ARGS=("1.0" "1.0" "1.0")
+                else
+                    L_ARGS=("pi" "pi" "pi")
+                fi
+                
+                OUT_FILE="stats_mpi_omp_${N}_${np}_${nt}_${type}.out"
+                ERR_FILE="stats_mpi_omp_${N}_${np}_${nt}_${type}.err"
+                
+                echo "Submitting: N=$N, MPI processes=$np, OpenMP threads=$nt, L=$type"
+                
+                mpisubmit.pl \
+                    -p "$np" \
+                    -t "$nt" \
+                    -w 00:30 \
+                    --stdout "$OUT_FILE" \
+                    --stderr "$ERR_FILE" \
+                    ./wave3d_combo "$N" "$nt" "${L_ARGS[@]}"
+            done
         done
     done
 done
 
-echo "All Polus jobs submitted."
+echo "All MPI+OpenMP jobs submitted to Polus via mpisubmit.pl"
